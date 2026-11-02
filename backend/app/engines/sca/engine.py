@@ -1,0 +1,59 @@
+"""Motor SCA: dependencias con vulnerabilidades conocidas (Módulo D)."""
+
+from concurrent.futures import ThreadPoolExecutor
+
+from app.engines.base import Engine, Finding
+from app.engines.sca.findings import has_severity, vulnerability_to_finding
+from app.engines.sca.manifests import find_dependencies
+from app.engines.sca.osv import OsvClient
+
+# Detalles de vulnerabilidades que se piden a OSV al mismo tiempo.
+MAX_PARALLEL_REQUESTS = 8
+
+
+class ScaEngine(Engine):
+    """Lee las dependencias del repo y consulta sus vulnerabilidades en OSV.
+
+    Si OSV no responde, lanza `OsvError`: el orquestador lo registra y sigue
+    con los demás motores.
+    """
+
+    name = "sca"
+
+    def __init__(self, client: OsvClient | None = None):
+        self.client = client or OsvClient()
+
+    def scan(self, repo_path: str) -> list[Finding]:
+        dependencies = find_dependencies(repo_path)
+        if not dependencies:
+            return []
+
+        vuln_ids = self.client.query_batch(dependencies)
+
+        # Cada vulnerabilidad se pide una sola vez, aunque afecte a varias dependencias.
+        unique_ids = sorted({vuln_id for ids in vuln_ids for vuln_id in ids})
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REQUESTS) as pool:
+            details = dict(zip(unique_ids, pool.map(self.client.get_vuln, unique_ids), strict=True))
+
+        findings: list[Finding] = []
+        for dependency, ids in zip(dependencies, vuln_ids, strict=True):
+            for vuln in _deduplicate([details[vuln_id] for vuln_id in ids]):
+                findings.append(vulnerability_to_finding(dependency, vuln))
+        return findings
+
+
+def _deduplicate(vulns: list[dict]) -> list[dict]:
+    """Deja una sola entrada por falla.
+
+    OSV puede devolver la misma falla con varios IDs (GHSA-..., PYSEC-...) que
+    se nombran entre sí como alias. Se prefiere la que trae la gravedad.
+    """
+    chosen: list[dict] = []
+    seen: set[str] = set()
+    for vuln in sorted(vulns, key=lambda v: not has_severity(v)):
+        ids = {vuln.get("id"), *(vuln.get("aliases") or [])} - {None}
+        if ids & seen:
+            continue
+        seen |= ids
+        chosen.append(vuln)
+    return chosen
