@@ -58,6 +58,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 
 
 
+### [2026-11-02] Contrato común entre motores (base.py)
+
+- **Problema abordado:** Publicar la interfaz que comparten todos los motores (`Severity`, `Finding`, `Engine`) para que cada módulo desarrolle y pruebe su motor por separado y el orquestador los integre sin cambios. Los Módulos D (pqc y SCA) venían usando una copia local porque el archivo no estaba en `main`.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5): pedí escribir `backend/app/engines/base.py` siguiendo al pie de la letra la sección 3 del plan de desarrollo, con tests.
+- **Código / Arquitectura generada:** `base.py` con `Severity` (enum de texto: critical, high, medium, low, info), el dataclass `Finding` y la clase abstracta `Engine` con `scan(repo_path) -> list[Finding]`. 8 tests en `backend/tests/engines/test_base.py`: severidad desde texto y como texto, valores inválidos, campos opcionales por defecto, `metadata` independiente entre hallazgos y que un motor sin `scan` no se pueda instanciar.
+- **Validación y Corrección Humana:** Verifiqué que los campos coincidan con el plan y con el uso que ya hacen `pqc.py` y el motor SCA (`cwe`, `cve`, `metadata`, `line`). Corrí la suite de pqc y la del SCA (desde su rama) contra este `base.py`: pasan todas salvo los tests de enlaces simbólicos, que fallan solo en Windows porque crear symlinks requiere permisos de administrador (no tiene relación con el contrato). Se dejó fuera del contrato el fingerprint y los pesos de severidad: son parte de la normalización y del Risk Score del orquestador.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(engines): publicar el contrato común entre motores (base.py)
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
