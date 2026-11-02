@@ -41,6 +41,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #8
 
+### [2026-11-02] Detector de criptografía post-cuántica para JavaScript (pqc.py)
+
+- **Problema abordado:** Extender el detector post-cuántico a JavaScript y TypeScript (módulo `crypto` de Node.js), necesario para la falla plantada en `app/signing.js` del repo de demo.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), trabajando de forma incremental bajo mi guía: aprobé el enfoque y el commit, y pedí la explicación de cada pieza antes de avanzar.
+- **Código / Arquitectura generada:** Detección con expresiones regulares (`JS_RULES`) sobre el código sin comentarios, reutilizando las mismas reglas que Python. Cubre `generateKeyPair(Sync)` (RSA, EC, DSA, DH), `createECDH`, `createDiffieHellman`, `createCipheriv` (AES por tamaño y ChaCha20) y `createHash` (inventario). Una función propia quita los comentarios `//` y `/* */` respetando los textos entre comillas y conservando los números de línea. El snippet se corta en el nombre del algoritmo para no incluir claves. Se generalizaron `_iter_files`, `_read_text` y `_make_finding` para los dos lenguajes. 9 tests nuevos (46 en total).
+- **Validación y Corrección Humana:** _pendiente_
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** _pendiente_
+
 
 
 ### [PLANTILLA — completar en próximas entradas]
