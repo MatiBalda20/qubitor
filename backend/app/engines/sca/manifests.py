@@ -7,6 +7,9 @@ se sabe qué versión está instalada, y reportarla daría falsos positivos.
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
+
+from app.engines.crypto.pqc import IGNORED_DIRS
 
 
 @dataclass(frozen=True)
@@ -114,3 +117,42 @@ def _line_of(text: str, needle: str) -> int | None:
     if index == -1:
         return None
     return text.count("\n", 0, index) + 1
+
+
+def find_dependencies(repo_path: str) -> list[Dependency]:
+    """Busca los archivos de dependencias en todo el repo y los lee.
+
+    Si una carpeta tiene package-lock.json, se usa ese y no su package.json:
+    el lock tiene las versiones realmente instaladas.
+    """
+    repo = Path(repo_path)
+    repo_root = repo.resolve()
+    dependencies: list[Dependency] = []
+    for path in sorted(repo.rglob("*")):
+        parser = _parser_for(path.name)
+        if parser is None:
+            continue
+        # El repo no es de confianza: no seguir enlaces a archivos de afuera.
+        if path.is_symlink() or not path.resolve().is_relative_to(repo_root):
+            continue
+        relative = path.relative_to(repo)
+        if any(part in IGNORED_DIRS for part in relative.parts) or not path.is_file():
+            continue
+        if path.name == "package.json" and (path.parent / "package-lock.json").is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        dependencies.extend(parser(text, relative.as_posix()))
+    return dependencies
+
+
+def _parser_for(file_name: str):
+    if file_name == "package.json":
+        return parse_package_json
+    if file_name == "package-lock.json":
+        return parse_package_lock
+    if file_name.startswith("requirements") and file_name.endswith(".txt"):
+        return parse_requirements
+    return None

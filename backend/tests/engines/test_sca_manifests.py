@@ -1,5 +1,6 @@
 from app.engines.sca.manifests import (
     Dependency,
+    find_dependencies,
     parse_package_json,
     parse_package_lock,
     parse_requirements,
@@ -113,3 +114,49 @@ def test_package_lock_no_repite_la_misma_version():
 def test_package_lock_mal_formado_no_rompe():
     assert parse_package_lock('{"dependencies": [1, 2]}', "package-lock.json") == []
     assert parse_package_lock('{"packages": {"node_modules/x": "1.0.0"}}', "package-lock.json") == []
+
+
+# --- Búsqueda en el repo ---
+
+def test_busca_dependencias_en_todo_el_repo(tmp_path):
+    (tmp_path / "requirements.txt").write_text("requests==2.19.0\n")
+    (tmp_path / "requirements-dev.txt").write_text("pytest==7.0.0\n")
+    (tmp_path / "web").mkdir()
+    (tmp_path / "web" / "package.json").write_text('{"dependencies": {"lodash": "4.17.4"}}')
+
+    encontradas = [(d.file_path, d.name) for d in find_dependencies(str(tmp_path))]
+
+    assert encontradas == [
+        ("requirements-dev.txt", "pytest"),
+        ("requirements.txt", "requests"),
+        ("web/package.json", "lodash"),
+    ]
+
+
+def test_si_hay_lock_se_usa_el_lock_y_no_el_package_json(tmp_path):
+    (tmp_path / "package.json").write_text('{"dependencies": {"lodash": "4.17.4"}}')
+    (tmp_path / "package-lock.json").write_text(
+        '{"packages": {"node_modules/lodash": {"version": "4.17.21"}}}'
+    )
+
+    [dependencia] = find_dependencies(str(tmp_path))
+
+    assert (dependencia.file_path, dependencia.version) == ("package-lock.json", "4.17.21")
+
+
+def test_ignora_dependencias_de_librerias_descargadas(tmp_path):
+    (tmp_path / "node_modules" / "lodash").mkdir(parents=True)
+    (tmp_path / "node_modules" / "lodash" / "package.json").write_text(
+        '{"dependencies": {"x": "1.0.0"}}'
+    )
+    assert find_dependencies(str(tmp_path)) == []
+
+
+def test_no_sigue_enlaces_a_archivos_de_afuera_del_repo(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    afuera = tmp_path / "requirements.txt"
+    afuera.write_text("secreto==1.0.0\n")
+    (repo / "requirements.txt").symlink_to(afuera)
+
+    assert find_dependencies(str(repo)) == []
