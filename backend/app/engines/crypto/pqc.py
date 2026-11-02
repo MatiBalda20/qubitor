@@ -11,6 +11,7 @@ Módulo C) llama a `scan_pqc` y junta sus resultados con los de `classic.py`.
 
 import ast
 import copy
+import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +20,9 @@ from app.engines.base import Finding, Severity
 
 # Carpetas que no son código del usuario: dependencias, entornos y builds.
 IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build"}
+
+PYTHON_SUFFIXES = (".py",)
+JS_SUFFIXES = (".js", ".mjs", ".cjs", ".ts")
 
 # Largo máximo del fragmento de código que se guarda en cada hallazgo.
 MAX_SNIPPET_CHARS = 200
@@ -172,20 +176,84 @@ for _crypto_name, _hashlib_name, _algorithm in _SAFE_HASHES:
     CALL_RULES[f"hashlib.{_hashlib_name}"] = _inventory_rule("hash", _algorithm)
 
 
+# --- JavaScript (módulo `crypto` de Node.js) ---
+# No hay un `ast` en la librería estándar de Python para JavaScript, así que se
+# usan expresiones regulares sobre el código sin comentarios.
+
+_JS_KEY_PAIR_TYPES = {
+    "rsa": _RSA_KEYGEN,
+    "rsa-pss": _RSA_KEYGEN,
+    "ec": _EC_KEYGEN,
+    "dsa": _DSA_KEYGEN,
+    "dh": _DH,
+}
+
+# Nombres de hash de Node.js → nombre para el reporte. MD5 y SHA-1 son del Módulo C.
+_JS_SAFE_HASHES = {
+    "sha256": "SHA-256",
+    "sha384": "SHA-384",
+    "sha512": "SHA-512",
+    "sha3-256": "SHA3-256",
+    "sha3-384": "SHA3-384",
+    "sha3-512": "SHA3-512",
+    "blake2b512": "BLAKE2b",
+}
+
+
+def _js_key_pair(match: re.Match) -> _Rule | None:
+    return _JS_KEY_PAIR_TYPES.get(match["algo"].lower())
+
+
+def _js_aes(match: re.Match) -> _Rule:
+    bits = int(match["bits"])
+    if bits == 128:
+        return _AES_128
+    return _aes_inventory(f"AES-{bits}")
+
+
+def _js_hash(match: re.Match) -> _Rule | None:
+    algorithm = _JS_SAFE_HASHES.get(match["algo"].lower())
+    if algorithm is None:
+        return None
+    return _inventory_rule("hash", algorithm)
+
+
+_QUOTE = r"""['"`]"""
+
+# Cada regla: patrón a buscar → regla que dispara, o una función que mira lo
+# encontrado y elige la regla (igual que CALL_RULES para Python).
+JS_RULES: list[tuple[re.Pattern, _Rule | Callable[[re.Match], _Rule | None]]] = [
+    (re.compile(rf"\bgenerateKeyPair(?:Sync)?\s*\(\s*{_QUOTE}(?P<algo>[\w-]+){_QUOTE}"), _js_key_pair),
+    (re.compile(r"\bcreateECDH\s*\("), _ECDH),
+    (re.compile(r"\b(?:createDiffieHellman|createDiffieHellmanGroup|getDiffieHellman)\s*\("), _DH),
+    (re.compile(rf"\bcreateCipheriv\s*\(\s*{_QUOTE}aes-(?P<bits>128|192|256)", re.IGNORECASE), _js_aes),
+    (re.compile(rf"\bcreateCipheriv\s*\(\s*{_QUOTE}chacha20-poly1305{_QUOTE}", re.IGNORECASE),
+     _inventory_rule("chacha20", "ChaCha20-Poly1305")),
+    (re.compile(rf"\bcreateHash\s*\(\s*{_QUOTE}(?P<algo>[\w-]+){_QUOTE}"), _js_hash),
+]
+
+
 def scan_pqc(repo_path: str) -> list[Finding]:
     repo = Path(repo_path)
     findings: list[Finding] = []
-    for path in _iter_files(repo, ".py"):
+    for path in _iter_files(repo, PYTHON_SUFFIXES):
         tree = _parse_python(path)
         if tree is None:
             continue
         findings.extend(_scan_python_tree(tree, path.relative_to(repo).as_posix()))
+    for path in _iter_files(repo, JS_SUFFIXES):
+        source = _read_text(path)
+        if source is None:
+            continue
+        findings.extend(_scan_js_source(source, path.relative_to(repo).as_posix()))
     return findings
 
 
-def _iter_files(repo: Path, suffix: str) -> Iterator[Path]:
+def _iter_files(repo: Path, suffixes: tuple[str, ...]) -> Iterator[Path]:
     repo_root = repo.resolve()
-    for path in repo.rglob(f"*{suffix}"):
+    for path in repo.rglob("*"):
+        if path.suffix not in suffixes:
+            continue
         # El repo no es de confianza: un enlace simbólico podría apuntar a un
         # archivo del servidor y filtrar su contenido en el reporte.
         if path.is_symlink() or not path.resolve().is_relative_to(repo_root):
@@ -197,14 +265,25 @@ def _iter_files(repo: Path, suffix: str) -> Iterator[Path]:
         yield path
 
 
-def _parse_python(path: Path) -> ast.Module | None:
-    """Devuelve el AST del archivo, o None si no se puede leer o parsear.
+def _read_text(path: Path) -> str | None:
+    """Devuelve el contenido del archivo, o None si no se puede leer.
 
     El contrato pide no lanzar excepciones por archivos ilegibles: se saltean.
     """
     try:
-        return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (OSError, UnicodeDecodeError, SyntaxError, ValueError):
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _parse_python(path: Path) -> ast.Module | None:
+    """Devuelve el AST del archivo, o None si no se puede leer o parsear."""
+    source = _read_text(path)
+    if source is None:
+        return None
+    try:
+        return ast.parse(source, filename=str(path))
+    except (SyntaxError, ValueError):
         return None
 
 
@@ -218,7 +297,7 @@ def _scan_python_tree(tree: ast.Module, file_path: str) -> list[Finding]:
         if callable(rule):
             rule = rule(node)
         if rule is not None:
-            findings.append(_make_finding(rule, node, file_path))
+            findings.append(_make_finding(rule, file_path, node.lineno, _snippet(node)))
     return findings
 
 
@@ -279,15 +358,72 @@ def _int_argument(node: ast.Call, position: int, keyword: str) -> int | None:
     return None
 
 
-def _make_finding(rule: _Rule, node: ast.Call, file_path: str) -> Finding:
+def _scan_js_source(source: str, file_path: str) -> list[Finding]:
+    code = _strip_js_comments(source)
+    findings: list[Finding] = []
+    for pattern, rule in JS_RULES:
+        for match in pattern.finditer(code):
+            found = rule(match) if callable(rule) else rule
+            if found is None:
+                continue
+            line = code.count("\n", 0, match.start()) + 1
+            # Solo hasta el nombre del algoritmo: lo que sigue (claves, IVs)
+            # puede ser secreto y no debe quedar en el reporte.
+            snippet = " ".join(match[0].split()) + "…"
+            findings.append(_make_finding(found, file_path, line, snippet))
+    findings.sort(key=lambda finding: finding.line)
+    return findings
+
+
+def _strip_js_comments(source: str) -> str:
+    """Reemplaza los comentarios `//` y `/* */` por espacios.
+
+    Respeta los textos entre comillas (`'http://...'` no es un comentario) y
+    conserva los saltos de línea, para que los números de línea no cambien.
+    """
+    result: list[str] = []
+    quote = None
+    i = 0
+    while i < len(source):
+        char = source[i]
+        if quote:
+            result.append(char)
+            if char == "\\":
+                result.append(source[i + 1:i + 2])
+                i += 2
+                continue
+            if char == quote:
+                quote = None
+            i += 1
+        elif char in "'\"`":
+            quote = char
+            result.append(char)
+            i += 1
+        elif source.startswith("//", i):
+            end = source.find("\n", i)
+            end = len(source) if end == -1 else end
+            result.append(" " * (end - i))
+            i = end
+        elif source.startswith("/*", i):
+            end = source.find("*/", i + 2)
+            end = len(source) if end == -1 else end + 2
+            result.append(re.sub(r"[^\n]", " ", source[i:end]))
+            i = end
+        else:
+            result.append(char)
+            i += 1
+    return "".join(result)
+
+
+def _make_finding(rule: _Rule, file_path: str, line: int, snippet: str) -> Finding:
     return Finding(
         engine="crypto",
         rule_id=rule.rule_id,
         title=rule.title,
         severity=rule.severity,
         file_path=file_path,
-        line=node.lineno,
-        snippet=_snippet(node),
+        line=line,
+        snippet=snippet,
         description=rule.description,
         cwe="CWE-327",
         metadata={"algorithm": rule.algorithm},

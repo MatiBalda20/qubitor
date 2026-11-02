@@ -28,7 +28,7 @@ def test_ignora_carpetas_de_dependencias(tmp_path):
     (tmp_path / ".venv").mkdir()
     (tmp_path / ".venv" / "site.py").write_text("")
 
-    encontrados = [p.name for p in _iter_files(tmp_path, ".py")]
+    encontrados = [p.name for p in _iter_files(tmp_path, (".py",))]
 
     assert encontrados == ["app.py"]
 
@@ -363,3 +363,90 @@ def test_el_snippet_largo_se_recorta(tmp_path):
 
     assert len(hallazgos[0].snippet) <= 201
     assert hallazgos[0].snippet.endswith("…")
+
+
+# --- JavaScript ---
+
+def _escanear_js(tmp_path, codigo, nombre="app.js"):
+    (tmp_path / nombre).write_text(codigo)
+    return scan_pqc(str(tmp_path))
+
+
+def test_js_detecta_claves_rsa(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "const crypto = require('crypto');\n"
+        "const par = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });\n"
+    ))
+
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.rsa-keygen"]
+    assert hallazgos[0].line == 2
+    assert hallazgos[0].file_path == "app.js"
+
+
+def test_js_detecta_claves_de_curva_eliptica_en_varias_lineas(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "const { privateKey } = crypto.generateKeyPairSync(\n"
+        "  \"ec\",\n"
+        "  { namedCurve: 'P-256' },\n"
+        ");\n"
+    ))
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.ec-keygen"]
+
+
+def test_js_detecta_ecdh_y_diffie_hellman(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "const a = crypto.createECDH('prime256v1');\n"
+        "const b = crypto.createDiffieHellman(2048);\n"
+    ))
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.ecdh", "crypto.pqc.dh"]
+
+
+def test_js_tipo_de_clave_sin_riesgo_cuantico_conocido_no_es_hallazgo(tmp_path):
+    hallazgos = _escanear_js(tmp_path, "crypto.generateKeyPairSync('ml-dsa-65');\n")
+    assert hallazgos == []
+
+
+def test_js_aes_128_y_aes_256(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "const a = crypto.createCipheriv('aes-128-gcm', clave, iv);\n"
+        "const b = crypto.createCipheriv('AES-256-GCM', clave, iv);\n"
+    ))
+
+    assert [(h.rule_id, h.severity) for h in hallazgos] == [
+        ("crypto.pqc.aes-128", Severity.LOW),
+        ("crypto.pqc.inventory.aes", Severity.INFO),
+    ]
+
+
+def test_js_hashes_seguros_van_al_inventario_y_md5_no(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "const a = crypto.createHash('sha256');\n"
+        "const b = crypto.createHash('md5');\n"
+    ))
+
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.inventory.hash"]
+    assert hallazgos[0].metadata["algorithm"] == "SHA-256"
+
+
+def test_js_ignora_comentarios_y_conserva_los_numeros_de_linea(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "// crypto.generateKeyPairSync('rsa')\n"
+        "/* crypto.createECDH('prime256v1');\n"
+        "   crypto.createDiffieHellman(2048); */\n"
+        "const url = 'https://ejemplo.com'; crypto.createECDH('prime256v1');\n"
+    ))
+
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.ecdh"]
+    assert hallazgos[0].line == 4
+
+
+def test_js_el_snippet_no_incluye_la_clave(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "crypto.createCipheriv('aes-128-gcm', 'clave-super-secreta', iv);\n"
+    ))
+    assert "clave-super-secreta" not in hallazgos[0].snippet
+
+
+def test_js_tambien_escanea_typescript(tmp_path):
+    hallazgos = _escanear_js(tmp_path, "crypto.createECDH('prime256v1');\n", nombre="app.ts")
+    assert [h.file_path for h in hallazgos] == ["app.ts"]
