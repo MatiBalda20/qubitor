@@ -261,10 +261,10 @@ function FindingRow({ finding, open, onToggle, onStatusChange, pending }: Findin
           open && 'bg-civic-soft/50',
         )}
       >
-        <span className={cn('col-span-2 md:col-span-1', closed && 'opacity-55')}>
+        <span className={cn('col-start-1 row-start-1 md:col-auto md:row-auto', closed && 'opacity-55')}>
           <SeverityBadge severity={severity} />
         </span>
-        <span className="min-w-0">
+        <span className="col-span-2 row-start-2 min-w-0 md:col-span-1 md:row-auto">
           <span
             className={cn(
               'block font-medium text-ink',
@@ -280,10 +280,10 @@ function FindingRow({ finding, open, onToggle, onStatusChange, pending }: Findin
           {finding.line != null && `:${finding.line}`}
         </span>
         <span className="hidden text-sm text-ink-2 md:block">{ENGINE_LABEL[finding.engine]}</span>
-        <span className="row-start-2 md:row-start-auto">
+        <span className="row-start-3 md:row-auto">
           <StatusStamp status={finding.status} />
         </span>
-        <span className="t-acc-chevron row-start-2 justify-self-end text-ink-3 md:row-start-auto">
+        <span className="t-acc-chevron col-start-2 row-start-1 justify-self-end text-ink-3 md:col-auto md:row-auto">
           <ChevronDown className="size-5" strokeWidth={1.75} aria-hidden="true" />
         </span>
       </button>
