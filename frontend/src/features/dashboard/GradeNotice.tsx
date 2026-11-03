@@ -12,7 +12,7 @@ const GRADE_COLOR: Record<Grade, { text: string; fill: string }> = {
   A: { text: 'text-ok', fill: 'bg-ok text-white' },
   B: { text: 'text-ok', fill: 'bg-ok text-white' },
   C: { text: 'text-sev-medium-ink', fill: 'bg-sev-medium text-ink' },
-  D: { text: 'text-sev-high-ink', fill: 'bg-sev-high text-white' },
+  D: { text: 'text-sev-high-ink', fill: 'bg-sev-high-ink text-white' },
   F: { text: 'text-sev-critical', fill: 'bg-sev-critical text-white' },
 }
 
@@ -93,7 +93,10 @@ export function GradeNotice({ score, grade, penalty, counted, total, scan, class
     <section
       ref={root}
       aria-labelledby="grade-notice-title"
-      className={cn('relative overflow-hidden rounded-sm bg-sheet shadow-sheet ring-1 ring-civic/30', className)}
+      className={cn(
+        'relative overflow-hidden rounded-sm border-[5px] border-double border-civic bg-sheet shadow-sheet',
+        className,
+      )}
     >
       <header className="flex items-center justify-between gap-3 bg-civic px-5 py-2.5 text-civic-ink">
         <h2 id="grade-notice-title" className="font-display text-lg font-semibold tracking-[0.06em] uppercase">
@@ -103,25 +106,27 @@ export function GradeNotice({ score, grade, penalty, counted, total, scan, class
       </header>
 
       <div className="grid gap-6 p-5 sm:grid-cols-[auto_1fr] sm:gap-7">
-        <div className="flex flex-col items-center gap-2 self-start">
+        <div className="relative flex flex-col items-center gap-2 self-start justify-self-center sm:justify-self-start">
           <div
             data-anim="letter"
-            className="grid size-36 place-items-center rounded-xs border-[5px] border-double border-civic bg-sheet"
+            className="grid size-44 place-items-center rounded-xs border-[5px] border-double border-civic bg-sheet"
           >
             <span
-              className={cn('font-display text-[7.5rem] leading-none font-bold', colors.text)}
+              className={cn('font-display text-[9rem] leading-none font-bold', colors.text)}
               aria-label={`Nota ${grade}`}
             >
               {grade}
             </span>
           </div>
           <span className="field-label">Nota</span>
+          <Stamp date={formatStampDate(finishedAt)} grade={grade} />
         </div>
 
-        <dl className="grid content-start gap-4">
-          <div data-anim="field">
+        {/* Campos del formulario: celdas con filete, como la fila de la escala. */}
+        <dl className="grid content-start overflow-hidden rounded-xs border border-rule-2">
+          <div data-anim="field" className="px-3.5 py-3">
             <dt className="field-label">Risk Score</dt>
-            <dd className="mt-0.5 flex items-baseline gap-1.5">
+            <dd className="mt-1 flex items-baseline gap-1.5">
               <span ref={scoreRef} className="font-display text-5xl leading-none font-semibold text-ink tabular">
                 {formatNumber(score)}
               </span>
@@ -129,19 +134,19 @@ export function GradeNotice({ score, grade, penalty, counted, total, scan, class
             </dd>
             <ScoreScale score={score} />
           </div>
-          <div data-anim="field" className="grid grid-cols-2 gap-4">
-            <div>
+          <div data-anim="field" className="grid grid-cols-2 border-t border-rule-2">
+            <div className="px-3.5 py-2.5">
               <dt className="field-label">Penalización</dt>
               <dd className="mt-0.5 font-semibold text-ink tabular">{formatNumber(penalty)} pts</dd>
             </div>
-            <div>
+            <div className="border-l border-rule-2 px-3.5 py-2.5">
               <dt className="field-label">Penalizan</dt>
               <dd className="mt-0.5 font-semibold text-ink tabular">
                 {counted} de {total}
               </dd>
             </div>
           </div>
-          <div data-anim="field">
+          <div data-anim="field" className="border-t border-rule-2 px-3.5 py-2.5">
             <dt className="field-label">Escaneado</dt>
             <dd className="mt-0.5 text-sm text-ink-2 tabular">
               <span className="whitespace-nowrap">{formatDateTime(finishedAt)}</span>
@@ -154,8 +159,6 @@ export function GradeNotice({ score, grade, penalty, counted, total, scan, class
       </div>
 
       <GradeScale grade={grade} />
-
-      <Stamp date={formatStampDate(finishedAt)} grade={grade} />
     </section>
   )
 }
@@ -207,7 +210,7 @@ function Stamp({ date, grade }: { date: string; grade: Grade }) {
       data-anim="stamp"
       viewBox="0 0 120 120"
       aria-hidden="true"
-      className="pointer-events-none absolute top-14 right-3 size-28 -rotate-12 text-stamp opacity-90 mix-blend-multiply sm:right-5"
+      className="pointer-events-none absolute -top-5 -right-9 size-24 -rotate-12 text-stamp opacity-90 mix-blend-multiply"
     >
       <defs>
         <path id="stamp-arc" d="M60,60 m-44,0 a44,44 0 1,1 88,0 a44,44 0 1,1 -88,0" />

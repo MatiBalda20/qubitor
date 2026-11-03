@@ -111,7 +111,7 @@ export function FindingsTable({
           </p>
         </div>
 
-        <div role="tablist" aria-label="Estado" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5">
+        <div role="tablist" aria-label="Estado" className="flex flex-wrap gap-1">
           {STATUS_TABS.map((tab) => (
             <button
               key={tab.id}

@@ -19,20 +19,20 @@ export function EngineMatrix({ counts, className }: EngineMatrixProps) {
         </h2>
       </header>
       <div className="overflow-x-auto">
-        <table className="group/matrix w-full min-w-[30rem] text-sm">
+        <table className="group/matrix w-full min-w-[30rem] [&_tr>*:last-child]:pr-5 text-sm">
           <thead>
             <tr className="border-b border-rule">
               <th scope="col" className="field-label py-2 pl-5 text-left">
                 Motor
+              </th>
+              <th scope="col" className="field-label py-2 pr-3 text-right">
+                Total
               </th>
               {SEVERITIES.map((severity) => (
                 <th key={severity} scope="col" className="field-label px-1 py-2 text-center">
                   {SEVERITY_LABEL[severity]}
                 </th>
               ))}
-              <th scope="col" className="field-label py-2 pr-5 text-right">
-                Total
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-rule">
@@ -47,12 +47,12 @@ export function EngineMatrix({ counts, className }: EngineMatrixProps) {
                   <th scope="row" className="py-2.5 pl-5 text-left font-medium text-ink">
                     {ENGINE_LABEL[engine]}
                   </th>
+                  <td className="py-2.5 pr-3 text-right font-semibold text-ink tabular">{total}</td>
                   {SEVERITIES.map((severity) => (
                     <td key={severity} className="px-1 py-1.5 text-center">
                       <Cell count={row[severity]} severity={severity} />
                     </td>
                   ))}
-                  <td className="py-2.5 pr-5 text-right font-semibold text-ink tabular">{total}</td>
                 </tr>
               )
             })}

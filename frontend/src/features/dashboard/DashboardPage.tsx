@@ -179,22 +179,20 @@ export default function DashboardPage() {
             <a href={repository.url} target="_blank" rel="noreferrer" className="hover:text-civic hover:underline">
               {repository.full_name}
             </a>
-            <span aria-hidden="true">·</span>
             <span>
-              rama <span className="font-mono text-[0.8125rem]">{repository.default_branch}</span>
+              <span aria-hidden="true" className="mr-2">·</span>rama <span className="font-mono text-[0.8125rem]">{repository.default_branch}</span>
             </span>
             {scan?.commit_sha && (
               <>
-                <span aria-hidden="true">·</span>
                 <span>
-                  commit <span className="font-mono text-[0.8125rem]">{scan.commit_sha}</span>
+                  <span aria-hidden="true" className="mr-2">·</span>commit <span className="font-mono text-[0.8125rem]">{scan.commit_sha}</span>
                 </span>
               </>
             )}
             {scan?.finished_at && (
               <>
-                <span aria-hidden="true">·</span>
-                <span className="tabular">último escaneo {formatDateTime(scan.finished_at)}</span>
+                <span className="tabular">
+                  <span aria-hidden="true" className="mr-2">·</span>último escaneo {formatDateTime(scan.finished_at)}</span>
               </>
             )}
           </span>
@@ -249,19 +247,22 @@ function DashboardBody({ scan, findings, onStatusChange, pendingIds }: Dashboard
 
   return (
     <>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-12">
-        <GradeNotice
-          className="xl:col-span-5"
-          score={stats.score}
-          grade={stats.grade}
-          penalty={stats.penalty}
-          counted={stats.counted}
-          total={findings.length}
-          scan={scan}
-        />
-        <PenaltyBreakdown className="xl:col-span-7" counts={stats.bySeverity} />
-        <EngineMatrix className="xl:col-span-7" counts={stats.byEngine} />
-        <ModuleShortcuts className="xl:col-span-5" counts={stats.byView} />
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 xl:grid-cols-12">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:col-span-6">
+          <GradeNotice
+            score={stats.score}
+            grade={stats.grade}
+            penalty={stats.penalty}
+            counted={stats.counted}
+            total={findings.length}
+            scan={scan}
+          />
+          <ModuleShortcuts counts={stats.byView} />
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:col-span-6">
+          <PenaltyBreakdown counts={stats.bySeverity} />
+          <EngineMatrix counts={stats.byEngine} />
+        </div>
       </div>
 
       <FindingsTable findings={findings} onStatusChange={onStatusChange} pendingIds={pendingIds} />
@@ -277,8 +278,8 @@ function DashboardSkeleton() {
         <Skeleton className="h-4 w-96 max-w-full" />
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 px-4 sm:px-8 xl:grid-cols-12">
-        <Skeleton className="h-[22rem] xl:col-span-5" />
-        <Skeleton className="h-[22rem] xl:col-span-7" />
+        <Skeleton className="h-[22rem] xl:col-span-6" />
+        <Skeleton className="h-[22rem] xl:col-span-6" />
         <Skeleton className="h-64 xl:col-span-12" />
       </div>
     </div>
