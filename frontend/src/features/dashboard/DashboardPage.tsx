@@ -248,8 +248,9 @@ function DashboardBody({ scan, findings, onStatusChange, pendingIds }: Dashboard
   return (
     <>
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 xl:grid-cols-12">
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:col-span-6">
+        <div className="contents xl:grid xl:grid-cols-[minmax(0,1fr)] xl:gap-5 xl:col-span-6">
           <GradeNotice
+            className="order-1 xl:order-none"
             score={stats.score}
             grade={stats.grade}
             penalty={stats.penalty}
@@ -257,11 +258,11 @@ function DashboardBody({ scan, findings, onStatusChange, pendingIds }: Dashboard
             total={findings.length}
             scan={scan}
           />
-          <ModuleShortcuts counts={stats.byView} />
+          <ModuleShortcuts className="order-4 xl:order-none" counts={stats.byView} />
         </div>
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 xl:col-span-6">
-          <PenaltyBreakdown counts={stats.bySeverity} />
-          <EngineMatrix counts={stats.byEngine} />
+        <div className="contents xl:grid xl:grid-cols-[minmax(0,1fr)] xl:gap-5 xl:col-span-6">
+          <PenaltyBreakdown className="order-2 xl:order-none" counts={stats.bySeverity} />
+          <EngineMatrix className="order-3 xl:order-none" counts={stats.byEngine} />
         </div>
       </div>
 
