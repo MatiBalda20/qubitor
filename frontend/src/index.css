@@ -1,0 +1,251 @@
+@import 'tailwindcss';
+
+@import '@fontsource-variable/public-sans';
+@import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource/barlow-condensed/500.css';
+@import '@fontsource/barlow-condensed/600.css';
+@import '@fontsource/barlow-condensed/700.css';
+
+/*
+ * Tokens de Qubitor. Mundo: cartel oficial de inspección.
+ * Papel de formulario frío, tinta institucional azul, severidad solo donde significa algo.
+ */
+@theme {
+  --font-sans: 'Public Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Barlow Condensed', 'Public Sans Variable', ui-sans-serif, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', monospace;
+
+  --color-paper: oklch(0.968 0.007 250);
+  --color-sheet: oklch(0.995 0.002 250);
+  --color-ink: oklch(0.23 0.035 262);
+  --color-ink-2: oklch(0.4 0.03 262);
+  --color-ink-3: oklch(0.5 0.025 262);
+  --color-rule: oklch(0.88 0.012 255);
+  --color-rule-2: oklch(0.8 0.018 255);
+
+  --color-civic: oklch(0.37 0.13 262);
+  --color-civic-deep: oklch(0.3 0.11 262);
+  --color-civic-ink: oklch(0.97 0.01 262);
+  --color-civic-muted: oklch(0.84 0.04 262);
+  --color-civic-soft: oklch(0.94 0.025 262);
+  --color-stamp: oklch(0.44 0.16 278);
+
+  --color-sev-critical: oklch(0.53 0.2 27);
+  --color-sev-critical-soft: oklch(0.95 0.03 27);
+  --color-sev-high: oklch(0.6 0.17 48);
+  --color-sev-high-ink: oklch(0.48 0.14 48);
+  --color-sev-high-soft: oklch(0.955 0.035 60);
+  --color-sev-medium: oklch(0.77 0.15 85);
+  --color-sev-medium-ink: oklch(0.47 0.1 75);
+  --color-sev-medium-soft: oklch(0.965 0.04 90);
+  --color-sev-low: oklch(0.6 0.08 235);
+  --color-sev-low-ink: oklch(0.45 0.08 240);
+  --color-sev-low-soft: oklch(0.95 0.02 235);
+  --color-sev-info: oklch(0.7 0.012 262);
+  --color-sev-info-ink: oklch(0.45 0.02 262);
+  --color-sev-info-soft: oklch(0.945 0.006 262);
+
+  --color-ok: oklch(0.5 0.12 155);
+  --color-ok-soft: oklch(0.95 0.03 155);
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+
+  --shadow-sheet: 0 1px 0 oklch(0.23 0.035 262 / 0.04), 0 1px 3px oklch(0.23 0.035 262 / 0.06);
+  --shadow-float: 0 2px 4px oklch(0.23 0.035 262 / 0.06), 0 12px 32px oklch(0.23 0.035 262 / 0.14);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-swift: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color-scheme: light;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background: oklch(0.37 0.13 262 / 0.18);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-civic);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  a {
+    text-underline-offset: 3px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-rule-2) transparent;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rótulo de campo de formulario (no es un eyebrow: siempre rotula un dato). */
+@utility field-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+
+/* ---------- Transiciones (recetas de transitions.dev) ---------- */
+
+:root {
+  --acc-expand: 250ms;
+  --acc-collapse: 250ms;
+  --acc-chevron: 250ms;
+  --acc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --toast-open: 350ms;
+  --toast-close: 250ms;
+  --toast-distance: 16px;
+  --toast-blur: 2px;
+  --toast-scale: 0.97;
+  --toast-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --skeleton-dur: 1.4s;
+  --reveal-dur: 400ms;
+  --reveal-blur: 4px;
+}
+
+/* Accordion: filas de hallazgos que se expanden. */
+.t-acc-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open='true'] .t-acc-panel {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--acc-expand) var(--acc-ease);
+}
+.t-acc-panel-inner {
+  overflow: hidden;
+  opacity: 0;
+  filter: blur(2px);
+  transition:
+    opacity var(--acc-collapse) var(--acc-ease),
+    filter var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open='true'] .t-acc-panel-inner {
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity var(--acc-expand) var(--acc-ease),
+    filter var(--acc-expand) var(--acc-ease);
+}
+.t-acc-chevron {
+  display: inline-flex;
+  transform: scaleY(1);
+  transform-origin: center;
+  transition: transform var(--acc-chevron) var(--acc-ease);
+}
+.t-acc[data-open='true'] .t-acc-chevron {
+  transform: scaleY(-1);
+}
+
+/* Toast: confirmación de acciones con opción de deshacer. */
+.t-toast {
+  opacity: 0;
+  transform: translateY(var(--toast-distance)) scale(var(--toast-scale));
+  filter: blur(var(--toast-blur));
+  transition:
+    opacity var(--toast-close) var(--toast-ease),
+    transform var(--toast-close) var(--toast-ease),
+    filter var(--toast-close) var(--toast-ease);
+}
+.t-toast.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+  transition:
+    opacity var(--toast-open) var(--toast-ease),
+    transform var(--toast-open) var(--toast-ease),
+    filter var(--toast-open) var(--toast-ease);
+}
+
+/* Skeleton: placeholder que pulsa y luego revela el contenido. */
+@keyframes t-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.t-skeleton {
+  background: var(--color-rule);
+  border-radius: var(--radius-xs);
+  animation: t-skeleton-pulse var(--skeleton-dur) ease-in-out infinite;
+}
+@keyframes t-reveal {
+  from {
+    opacity: 0;
+    filter: blur(var(--reveal-blur));
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+.t-reveal {
+  animation: t-reveal var(--reveal-dur) var(--ease-swift) both;
+}
+
+/* Barra indeterminada del escaneo mientras está en cola. */
+@keyframes t-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.t-indeterminate {
+  animation: t-indeterminate 1.4s var(--ease-swift) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-acc-panel,
+  .t-acc-panel-inner,
+  .t-acc-chevron,
+  .t-toast {
+    transition: none !important;
+  }
+  .t-skeleton,
+  .t-reveal,
+  .t-indeterminate {
+    animation: none !important;
+  }
+}
