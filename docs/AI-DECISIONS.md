@@ -67,6 +67,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(engines): publicar el contrato común entre motores (base.py)
 
+### [2026-11-02] Motor SAST con Bandit (SastEngine)
+
+- **Problema abordado:** Detectar código inseguro en repos Python (eval/exec, SQL armada con strings, `shell=True`, pickle, YAML inseguro, TLS sin verificar, etc.) y devolverlo con el contrato común, para la vista «Código inseguro» y el Risk Score.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), de a un paso por commit: (1) ejecutar Bandit y leer su JSON, (2) convertir los resultados a `Finding`, (3) armar el motor y probarlo de punta a punta.
+- **Código / Arquitectura generada:** `backend/app/engines/sast/`: `bandit.py` ejecuta `python -m bandit -r . -f json` como subproceso con el repo como directorio de trabajo (rutas relativas), límite de 50 s y exclusión de `node_modules`, `.venv`, `dist`, etc.; ante timeout, código de salida inesperado o salida inválida lanza `BanditError` para que el orquestador lo registre y siga. `findings.py` mapea severidad de Bandit a la escala unificada, sube a `high` eval, exec e inyección SQL, baja un nivel si la confianza es baja, agrega CWE y títulos en español. `engine.py` expone `SastEngine` (`name = "sast"`). Reglas con prefijo `sast.bandit.<id>`. 26 tests en `test_sast_bandit.py`, `test_sast_findings.py` y `test_sast_engine.py`.
+- **Validación y Corrección Humana:** Revisé la salida real de Bandit antes de mapearla. Se detectó que la opción `-x node_modules` no excluía nada y se cambió por patrones `*/node_modules/*`, verificado con un test. Siguiendo lo que se encontró en el motor post-cuántico: se descartan enlaces simbólicos y archivos fuera del repo (un repo malicioso podría filtrar archivos del servidor en el snippet) y se enmascaran todos los textos del snippet, porque Bandit incluye líneas vecinas que pueden tener secretos; el costo es que en la SQL armada no se ve la consulta, pero sí la línea. En Windows Bandit usa `\` como separador: se normaliza para que funcione igual en Linux. Semgrep (JavaScript) queda pendiente hasta medir si entra en los 512 MB del plan free de Render. Pendiente: agregar `bandit` a las dependencias del scan-worker.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(sast): motor SAST con Bandit
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
