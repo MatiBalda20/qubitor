@@ -67,6 +67,14 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(engines): publicar el contrato común entre motores (base.py)
 
+### [2026-11-02] Orquestador del escaneo (normalización, Risk Score y ejecución de motores)
+
+- **Problema abordado:** Ejecutar todos los motores sobre un repo clonado sin que la falla de uno arruine el escaneo, unificar sus hallazgos sin duplicados y calcular el Risk Score y la nota A–F (etapas 2, 3 y 5 del pipeline).
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), de a un paso por commit: (1) fingerprint y deduplicación, (2) Risk Score y nota, (3) ejecución en paralelo con timeout, (4) pipeline que une todo.
+- **Código / Arquitectura generada:** `backend/app/orchestrator/`: `normalize.py` (fingerprint SHA-256 de motor + regla + archivo + línea; ante duplicados se queda el de mayor severidad), `risk.py` (pesos y umbrales de la sección 5 del plan; recibe solo las severidades que cuentan, así la API lo puede recalcular al marcar hallazgos como resueltos o falsos positivos), `runner.py` (`ThreadPoolExecutor` con un hilo por motor y límite de 70 s; los errores y timeouts quedan en un dict por motor) y `pipeline.py` (`analyze_repository(repo_path, engines)` → `ScanResult` con hallazgos por fingerprint, errores, score, nota y duración). 33 tests en `backend/tests/orchestrator/`.
+- **Validación y Corrección Humana:** El orquestador recibe la lista de motores en lugar de importarlos, así se testea con motores falsos (que fallan, que se cuelgan, que tardan) y no depende de que estén mergeados. El fingerprint no incluye snippet ni severidad para que el mismo problema se reconozca entre escaneos aunque cambie el código vecino o la IA ajuste la severidad. Limitación aceptada: un hilo de Python no se puede cortar desde afuera, así que un motor colgado sigue corriendo después del timeout; se mitiga con los timeouts propios de cada motor (Bandit 50 s) y con que el scan-worker procesa un escaneo por proceso. Queda para el scan-worker: clonado (Módulo E), triage con IA entre la normalización y el score (Módulo E) y persistencia (modelos de Alvaro).
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(orchestrator): orquestador del escaneo
 ### [2026-11-02] Motor SAST con Bandit (SastEngine)
 
 - **Problema abordado:** Detectar código inseguro en repos Python (eval/exec, SQL armada con strings, `shell=True`, pickle, YAML inseguro, TLS sin verificar, etc.) y devolverlo con el contrato común, para la vista «Código inseguro» y el Risk Score.
