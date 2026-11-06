@@ -84,6 +84,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(sast): motor SAST con Bandit
 
+### [2026-11-06] Modelos de Base de Datos y Conexión a Supabase
+
+- **Problema abordado:** Diseñar el esquema relacional en SQLAlchemy respetando el modelo de datos (organizaciones, usuarios, repositorios, escaneos, hallazgos) y configurar la conexión para soportar el pooler transaccional de Supabase (PgBouncer).
+- **Prompt / Herramienta utilizada:** Claude Opus, refinado mediante revisión cruzada en GitHub (PR Review) para ajustar compatibilidad con psycopg3 y formateo de Enums.
+- **Código / Arquitectura generada:** `database.py` implementa `create_engine` con `pool_pre_ping=True` y `prepare_threshold=None` para evitar fallos de prepared statements en el puerto 6543 de Supabase. `models.py` define las tablas con cascadas, índices compuestos y tipos JSONB, almacenando los Enums por su valor en minúscula (`values_callable`).
+- **Validación y Corrección Humana:** Se detectó en la revisión de código que los Enums de Python se guardaban en mayúscula (ej. `HIGH`), rompiendo el contrato que usa minúsculas (`high`); se corrigió con lambdas en SQLAlchemy. Además, se configuró explícitamente el `prepare_threshold` tras validar las limitaciones del pooler transaccional.
+- **Responsable:** Alvaro Marini / Juan Ignacio Wilt (Review)
+- **PR:** #18
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**

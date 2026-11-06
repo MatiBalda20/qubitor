@@ -65,7 +65,7 @@ class Scan(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     repository_id = Column(UUID(as_uuid=True), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False)
-    status = Column(Enum(ScanStatus), nullable=False, default=ScanStatus.QUEUED)
+    status = Column(Enum(ScanStatus, values_callable=lambda e: [x.value for x in e]), nullable=False, default=ScanStatus.QUEUED)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
@@ -93,7 +93,7 @@ class Finding(Base):
     engine = Column(String, nullable=False)
     rule_id = Column(String, nullable=False)
     title = Column(String, nullable=False)
-    severity = Column(Enum(Severity), nullable=False)
+    severity = Column(Enum(Severity, values_callable=lambda e: [x.value for x in e]), nullable=False)
     file_path = Column(String, nullable=False)
     line = Column(Integer, nullable=True)
     snippet = Column(Text, nullable=False)
@@ -102,9 +102,9 @@ class Finding(Base):
     cve = Column(String, nullable=True)
     metadata_ = Column("metadata", JSONB, default=dict) # Alias para evitar conflicto con .metadata de SQLAlchemy
 
-    status = Column(Enum(FindingStatus), nullable=False, default=FindingStatus.OPEN)
+    status = Column(Enum(FindingStatus, values_callable=lambda e: [x.value for x in e]), nullable=False, default=FindingStatus.OPEN)
     ai_is_false_positive = Column(Boolean, nullable=True)
-    ai_adjusted_severity = Column(Enum(Severity), nullable=True)
+    ai_adjusted_severity = Column(Enum(Severity, values_callable=lambda e: [x.value for x in e]), nullable=True)
     ai_explanation = Column(Text, nullable=True)
     ai_remediation = Column(Text, nullable=True)
 
