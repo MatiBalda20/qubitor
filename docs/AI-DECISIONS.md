@@ -102,6 +102,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Alvaro Marini / Valentina Pértile de la Vega (Review)
 - **PR:** #15
 
+### [2026-11-06] Regex genérico del motor de secretos (secrets/engine.py)
+
+- **Problema abordado:** El regex genérico de `SecretsEngine` tardaba un tiempo cuadrático en líneas largas (14 s con 20 000 caracteres alfanuméricos, y sin terminar en 45 s con 50 000), lo que permitía colgar el motor con un repo ajeno. Además marcaba como secreto crítico URLs, código sin espacios y tipos de TypeScript, y si el secreto tenía `}` o `]` enmascaraba solo hasta ese carácter.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), durante la revisión cruzada del PR: le pedí revisar los cambios de Alvaro y aplicar las correcciones en el PR.
+- **Código / Arquitectura generada:** `GENERIC_VAR_REGEX` con cuantificadores acotados y tres alternativas para el valor: entre comillas simples, entre comillas dobles (se toma entero) o sin comillas (solo caracteres propios de una credencial). `match.group(1)` pasa a `match.group(match.lastindex)`. Tests nuevos para línea larga, URLs y código, y secretos con `}` o `]`.
+- **Validación y Corrección Humana:** _pendiente de la revisión de Valentina_
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #15
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
