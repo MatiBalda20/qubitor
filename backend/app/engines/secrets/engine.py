@@ -15,8 +15,12 @@ PATTERNS = {
     "secrets.private_key": (re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"), "Clave privada expuesta")
 }
 
-# Regex mejorado para capturar .env, diccionarios y variables con "_" (ej. secret_value)
-GENERIC_VAR_REGEX = re.compile(r"(?i)[a-z0-9_]*(?:key|secret|token|password)[a-z0-9_]*\s*['\"]?\s*[:=]\s*['\"]?([^\s'\"\]}\r\n]{20,})['\"]?")
+# Cuantificadores acotados: el motor analiza código ajeno y no puede tardar
+# un tiempo cuadrático en una línea larga. Con comillas se toma el valor entero.
+GENERIC_VAR_REGEX = re.compile(
+    r"""(?i)(?:key|secret|token|password)[a-z0-9_]{0,40}['"]?\s{0,5}[:=]\s{0,5}"""
+    r"""(?:'([^'\r\n]{20,})'|"([^"\r\n]{20,})"|([a-z0-9_+/=.\-]{20,}))"""
+)
 
 def shannon_entropy(data: str) -> float:
     if not data:
@@ -69,7 +73,7 @@ class SecretsEngine(Engine):
 
             # 2. Búsqueda genérica por alta entropía
             for match in GENERIC_VAR_REGEX.finditer(line):
-                secret_value = match.group(1)
+                secret_value = match.group(match.lastindex)
                 # Deduplicación: Si ya lo capturó un patrón específico, no lo agregamos como genérico
                 if not any(s[0] == secret_value for s in line_secrets):
                     if shannon_entropy(secret_value) > 4.5:
