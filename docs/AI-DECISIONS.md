@@ -84,6 +84,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(sast): motor SAST con Bandit
 
+### [2026-11-06] Reglas de Criptografía Clásica y CryptoEngine
+
+- **Problema abordado:** Detectar algoritmos obsoletos (MD5, DES, RC4), AES-ECB, RSA débil y random inseguro. Evitar duplicación de reportes de RSA con la detección post-cuántica (PQC).
+- **Prompt / Herramienta utilizada:** Claude Opus, refactorización a partir de un PR Review. Se integraron utilidades del módulo PQC (`_MaskStrings`, `_collect_imports`) para parseo y seguridad del código.
+- **Código / Arquitectura generada:** `scan_classic` utiliza el módulo `ast` para Python y resolver alias de importación (detectando librerías `cryptography`, `Crypto`, `hashlib`), capturando excepciones de recursividad de AST. En JS emplea regex con enmascaramiento temporal de literales. En `crypto/__init__.py` se orquestaron ambos módulos, aplicando una deduplicación manual que prioriza el hallazgo "HIGH" clásico por sobre el "MEDIUM" cuántico cuando coinciden en la misma línea.
+- **Validación y Corrección Humana:** Se validó que los literales de clave en `AES.new` ya no se filtren gracias a la reutilización de `_MaskStrings`. Se acotó el falso positivo de `random.choice` limitando su evaluación exclusivamente a cuando el resultado se asigna a variables de seguridad (password, token, secret).
+- **Responsable:** Alvaro Marini / Valentina Pértile de la Vega (Review)
+- **PR:** #16
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**

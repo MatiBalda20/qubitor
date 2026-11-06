@@ -7,8 +7,17 @@ class CryptoEngine(Engine):
 
     def scan(self, repo_path: str) -> list[Finding]:
         findings = []
-        # Ejecuta el análisis de Criptografía Clásica (Módulo C)
         findings.extend(scan_classic(repo_path))
-        # Ejecuta el análisis de Criptografía Post-Cuántica (Módulo D)
         findings.extend(scan_pqc(repo_path))
-        return findings
+        
+        # Deduplicación: Si una línea tiene RSA < 2048 como rsa-weak-key (HIGH),
+        # descartamos el hallazgo pqc.rsa-keygen (MEDIUM) en la misma línea.
+        weak_rsa_keys = {(f.file_path, f.line) for f in findings if f.rule_id == "crypto.classic.rsa-weak-key"}
+        
+        filtered = []
+        for f in findings:
+            if f.rule_id == "crypto.pqc.rsa-keygen" and (f.file_path, f.line) in weak_rsa_keys:
+                continue
+            filtered.append(f)
+            
+        return filtered
