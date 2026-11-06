@@ -1,4 +1,5 @@
-# backend/worker/Dockerfile
+# Se construye con backend/ como contexto:
+#   docker build -f backend/worker/Dockerfile backend
 # Usamos una imagen base oficial de Python ligera
 FROM python:3.11-slim
 
@@ -24,7 +25,6 @@ RUN mkdir -p /app ${REPOS_DIR} \
 WORKDIR /app
 
 # Copiamos el archivo de dependencias e instalamos (como root, pero quedan disponibles globalmente)
-# Asegurate de que bandit esté en el requirements.txt
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -34,6 +34,5 @@ COPY --chown=qubitor:qubitor_group . /app/
 # Cambiamos al usuario no privilegiado
 USER qubitor
 
-# Evitamos ataques limitando la memoria temporal si es necesario en tiempo de ejecución.
-# El comando por defecto asume que usamos rq worker o un script de inicio
-CMD ["python", "-m", "rq", "worker", "scans", "--url", "redis://localhost:6379"]
+# REDIS_URL se carga en el panel de Render; la lee app/config.py al arrancar.
+CMD ["python", "-m", "app.worker.run"]
