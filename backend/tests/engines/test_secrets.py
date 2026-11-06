@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from app.engines.base import Severity
 from app.engines.secrets.engine import SecretsEngine
@@ -45,3 +47,28 @@ def test_detecta_secretos_genericos_sin_comillas_y_en_diccionarios(tmp_path):
     _escribir(tmp_path, "config.json", "{'api_token': 'qL7xV2mR9tK4wZ8pN3sF6hJ1cB5dG0yE'}")
     hallazgos = SecretsEngine().scan(str(tmp_path))
     assert len(hallazgos) == 2
+
+def test_linea_larga_no_cuelga_el_motor(tmp_path):
+    _escribir(tmp_path, "blob.txt", "a" * 20000)
+    inicio = time.monotonic()
+    hallazgos = SecretsEngine().scan(str(tmp_path))
+    assert time.monotonic() - inicio < 1
+    assert len(hallazgos) == 0
+
+@pytest.mark.parametrize("linea", [
+    "TOKEN_URL=https://auth.Example.com/oauth2/V1/Token?client=ABC123xyz&scope=Read_Write&aud=Zq9",
+    "secret_key=Settings.getSecretValue(Vault.Client(URL_X),Path.join(BASE,'a'))",
+    "const tokenMap:Record<string,AuthTokenResponse|RefreshPayload|Null_Value>=new Map();",
+    "--key: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk",
+])
+def test_no_reporta_urls_ni_codigo_como_secreto(tmp_path, linea):
+    _escribir(tmp_path, "config.txt", linea)
+    hallazgos = SecretsEngine().scan(str(tmp_path))
+    assert len(hallazgos) == 0
+
+@pytest.mark.parametrize("separador", ["}", "]"])
+def test_enmascara_entero_un_secreto_con_llaves_o_corchetes(tmp_path, separador):
+    _escribir(tmp_path, "settings.py", f"password = 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0{separador}SECRETORESTANTE'")
+    hallazgos = SecretsEngine().scan(str(tmp_path))
+    assert len(hallazgos) == 1
+    assert "SECRETORESTANTE" not in hallazgos[0].snippet
