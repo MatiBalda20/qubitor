@@ -31,6 +31,11 @@ def scan_classic(repo_path: str) -> list[Finding]:
             continue
         if any(part in IGNORED_DIRS for part in path.relative_to(repo).parts):
             continue
+            
+        # FIX (Memoria): Filtramos por extensión ANTES de leer el archivo
+        if path.suffix not in PYTHON_SUFFIXES and path.suffix not in JS_SUFFIXES:
+            continue
+            
         try:
             content = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -47,7 +52,8 @@ def _scan_python(content: str, file_path: str) -> list[Finding]:
     findings = []
     try:
         tree = ast.parse(content, filename=file_path)
-    except (SyntaxError, ValueError):
+    # FIX: Capturamos RecursionError
+    except (SyntaxError, ValueError, RecursionError):
         return findings
 
     aliases = _collect_imports(tree)
@@ -87,16 +93,21 @@ def _scan_python(content: str, file_path: str) -> list[Finding]:
             ):
                 findings.append(_create_finding("weak-cipher", "Uso de cifrado obsoleto (DES/RC4/Blowfish)", Severity.HIGH, file_path, node.lineno, snippet, "Migrar a AES-256-GCM."))
             
-            # RSA < 2048
+            # RSA < 2048 (FIX Posicional)
             elif func_name in (
                 "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key",
                 "Crypto.PublicKey.RSA.generate", "rsa.newkeys", "rsa.generate_private_key", "RSA.generate", "newkeys"
             ):
-                size = _int_argument(node, 0, "key_size") or _int_argument(node, 0, "bits") or _int_argument(node, 1, "key_size") or _int_argument(node, 0, "")
+                # cryptography usa key_size en posición 1, rsa/pycryptodome en posición 0
+                if "cryptography" in func_name or "generate_private_key" in func_name:
+                    size = _int_argument(node, 1, "key_size") or _int_argument(node, 0, "key_size")
+                else:
+                    size = _int_argument(node, 0, "bits") or _int_argument(node, 0, "nbits") or _int_argument(node, 0, "")
+                
                 if isinstance(size, int) and size < 2048:
                     findings.append(_create_finding("rsa-weak-key", "Clave RSA menor a 2048 bits", Severity.HIGH, file_path, node.lineno, snippet, "Mínimo 3072 bits."))
             
-            # AES ECB
+            # AES ECB (FIX modes.ECB())
             elif func_name in ("Crypto.Cipher.AES.new", "AES.new"):
                 mode_node = None
                 if len(node.args) > 1:
@@ -105,24 +116,20 @@ def _scan_python(content: str, file_path: str) -> list[Finding]:
                     if kw.arg == "mode":
                         mode_node = kw.value
                 
-                is_ecb = False
-                if isinstance(mode_node, ast.Attribute) and mode_node.attr == "MODE_ECB":
-                    is_ecb = True
-                elif isinstance(mode_node, ast.Name) and mode_node.id == "MODE_ECB":
-                    is_ecb = True
-                elif isinstance(mode_node, ast.Constant) and mode_node.value == 1:
-                    is_ecb = True
-
-                if is_ecb:
-                    findings.append(_create_finding("aes-ecb", "AES en modo ECB", Severity.MEDIUM, file_path, node.lineno, snippet, "El modo ECB filtra patrones del texto plano."))
+                if mode_node:
+                    try:
+                        if "ECB" in ast.unparse(mode_node):
+                            findings.append(_create_finding("aes-ecb", "AES en modo ECB", Severity.MEDIUM, file_path, node.lineno, snippet, "El modo ECB filtra patrones del texto plano."))
+                    except RecursionError:
+                        pass
             
-            # TLS Inseguro (verify=False)
+            # TLS Inseguro
             elif func_name in ("requests.get", "requests.post", "requests.request", "requests.put"):
                 verify = _get_kwarg(node, "verify")
                 if verify is False:
                     findings.append(_create_finding("tls-insecure", "Validación TLS deshabilitada", Severity.HIGH, file_path, node.lineno, snippet, "Peligro de Man-in-the-Middle."))
 
-        # Random no criptográfico (solo si se asigna a variables de seguridad)
+        # Random no criptográfico
         elif isinstance(node, ast.Assign):
             is_secret_target = False
             for target in node.targets:
@@ -154,28 +161,19 @@ def _get_kwarg(node, name):
 def _scan_js(content: str, file_path: str) -> list[Finding]:
     findings = []
     for i, line in enumerate(content.splitlines(), start=1):
-        # Enmascarar strings en JS con regex simple para el snippet
         snippet = re.sub(r"""(['"`])(?:\\.|(?!\1).)*?\1""", r"\1***\1", line).strip()[:200]
         
         if re.search(r"createHash\(['\"](md5|sha1)['\"]\)", line, re.I):
             findings.append(_create_finding("weak-hash", "Uso de hash roto (MD5/SHA-1)", Severity.HIGH, file_path, i, snippet, "Usar SHA-256."))
-        
         elif re.search(r"createCipheriv\(['\"](des|rc4|bf)", line, re.I):
             findings.append(_create_finding("weak-cipher", "Uso de cifrado obsoleto", Severity.HIGH, file_path, i, snippet, "Migrar a AES-256-GCM."))
-            
         elif re.search(r"createCipheriv\(['\"]aes-\d{3}-ecb", line, re.I):
             findings.append(_create_finding("aes-ecb", "AES en modo ECB", Severity.MEDIUM, file_path, i, snippet, "El modo ECB es inseguro."))
-        
-        # RSA < 2048 en JS
         elif match := re.search(r"modulusLength:\s*(\d+)", line):
             if int(match.group(1)) < 2048 and re.search(r"rsa", line, re.I):
                 findings.append(_create_finding("rsa-weak-key", "Clave RSA menor a 2048 bits", Severity.HIGH, file_path, i, snippet, "Mínimo 3072 bits."))
-            
-        # Math.random para tokens
         elif "Math.random()" in line and re.search(r"(?i)(token|key|secret|password)", line):
             findings.append(_create_finding("insecure-random", "Math.random para tokens", Severity.MEDIUM, file_path, i, snippet, "Usar crypto.randomBytes."))
-            
-        # TLS Inseguro / TLSv1
         elif re.search(r"rejectUnauthorized:\s*false", line) or re.search(r"secureProtocol:\s*['\"]TLSv1['\"]", line):
             findings.append(_create_finding("tls-insecure", "Validación TLS deshabilitada o TLS 1.0 en Node", Severity.HIGH, file_path, i, snippet, "Peligro de Man-in-the-Middle."))
             
