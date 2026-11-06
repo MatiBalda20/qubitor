@@ -111,6 +111,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #15
 
+### [2026-11-06] Regla por vulnerabilidad en el motor SCA (engines/sca)
+
+- **Problema abordado:** Todas las vulnerabilidades usaban la misma regla, y el fingerprint se calcula con motor + regla + archivo + línea. Al deduplicar, varias CVE de un mismo paquete se pisaban y quedaba una sola, por lo que se perdían hallazgos y el Risk Score salía mejor de lo real.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5). Lo detectó al comparar el mock del frontend con el motor durante la revisión de PRs, y le pedí corregirlo.
+- **Código / Arquitectura generada:** `rule_id` pasa a ser `sca.osv.<id de la vulnerabilidad>` en `findings.py`. Test nuevo que pasa dos fallas del mismo paquete por `deduplicate`.
+- **Validación y Corrección Humana:** _pendiente_
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** _pendiente_
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
