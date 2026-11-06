@@ -93,6 +93,24 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Matías Balda
 - **PR:** _pendiente_
 
+### [2026-11-06] Motor de Secretos (secrets/engine.py)
+
+- **Problema abordado:** Detectar secretos hardcodeados mediante expresiones regulares (AWS, GitHub, Slack, etc.) y alta entropía de Shannon, garantizando que el valor expuesto no quede en texto plano dentro del hallazgo final ni se dupliquen puntajes.
+- **Prompt / Herramienta utilizada:** Claude Opus, revisión asistida para resolver issues de un Code Review cruzado (enmascaramiento global por línea, deduplicación de tokens conocidos frente a entropía genérica y soporte de formatos sin comillas como `.env`).
+- **Código / Arquitectura generada:** `SecretsEngine` lee archivos no excluidos línea por línea. Ejecuta 5 patrones específicos y un patrón genérico (`GENERIC_VAR_REGEX`) que soporta variables con guiones bajos y formatos de asignación diversos (`=`, `:`, con/sin comillas). Se utiliza una lista temporal de secretos por línea para aplicar el reemplazo `***` de forma global antes de instanciar los objetos `Finding`.
+- **Validación y Corrección Humana:** Se identificó mediante pruebas que un token de GitHub asignado a una variable llamada `GITHUB_TOKEN` era reportado dos veces (por regex de GitHub y por entropía). Se corrigió agregando validación de deduplicación. Además, se ajustó el regex genérico para que soporte sintaxis de variables como `secret_value` y archivos sin comillas como `.env` o `.yaml`.
+- **Responsable:** Alvaro Marini / Valentina Pértile de la Vega (Review)
+- **PR:** #15
+
+### [2026-11-06] Regex genérico del motor de secretos (secrets/engine.py)
+
+- **Problema abordado:** El regex genérico de `SecretsEngine` tardaba un tiempo cuadrático en líneas largas (14 s con 20 000 caracteres alfanuméricos, y sin terminar en 45 s con 50 000), lo que permitía colgar el motor con un repo ajeno. Además marcaba como secreto crítico URLs, código sin espacios y tipos de TypeScript, y si el secreto tenía `}` o `]` enmascaraba solo hasta ese carácter.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), durante la revisión cruzada del PR: le pedí revisar los cambios de Alvaro y aplicar las correcciones en el PR.
+- **Código / Arquitectura generada:** `GENERIC_VAR_REGEX` con cuantificadores acotados y tres alternativas para el valor: entre comillas simples, entre comillas dobles (se toma entero) o sin comillas (solo caracteres propios de una credencial). `match.group(1)` pasa a `match.group(match.lastindex)`. Tests nuevos para línea larga, URLs y código, y secretos con `}` o `]`.
+- **Validación y Corrección Humana:** Detecté el problema durante la revisión cruzada del PR, comparando el regex nuevo con el anterior: 20 000 caracteres tardaban 14 s y con 50 000 no terminaba en 45 s, mientras que el anterior tardaba 0,016 s con 400 000. Antes de aplicar el arreglo se escribieron los tests y se comprobó que los 7 casos nuevos fallaran con el regex anterior; con el arreglo pasan los 13 del motor y la suite completa da 146 tests OK y 3 saltados. Con el regex acotado, el peor caso probado tardó 3,2 s con 3,9 MB. Revisé que siga detectando `.env`, YAML, JSON, diccionarios y variables como `secret_value`. Limitaciones aceptadas para el MVP: no se detectan secretos en hexadecimal (su entropía máxima es 4,0 y el umbral del plan es 4,5), ni `github_pat_...`, ni `BEGIN ENCRYPTED PRIVATE KEY`, y `pnpm-lock.yaml` se sigue escaneando. Un valor sin comillas con caracteres fuera del conjunto permitido, como `$` o `!`, se corta en ese carácter: si la parte anterior no llega a 20 caracteres no se detecta, y si llega, el resto queda visible en el snippet. Pendiente de revisión por Alvaro.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #15
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
