@@ -84,6 +84,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(sast): motor SAST con Bandit
 
+### [2026-11-06] Motor de Secretos (secrets/engine.py)
+
+- **Problema abordado:** Detectar secretos hardcodeados mediante expresiones regulares (AWS, GitHub, Slack, etc.) y alta entropía de Shannon, garantizando que el valor expuesto no quede en texto plano dentro del hallazgo final ni se dupliquen puntajes.
+- **Prompt / Herramienta utilizada:** Claude Opus, revisión asistida para resolver issues de un Code Review cruzado (enmascaramiento global por línea, deduplicación de tokens conocidos frente a entropía genérica y soporte de formatos sin comillas como `.env`).
+- **Código / Arquitectura generada:** `SecretsEngine` lee archivos no excluidos línea por línea. Ejecuta 5 patrones específicos y un patrón genérico (`GENERIC_VAR_REGEX`) que soporta variables con guiones bajos y formatos de asignación diversos (`=`, `:`, con/sin comillas). Se utiliza una lista temporal de secretos por línea para aplicar el reemplazo `***` de forma global antes de instanciar los objetos `Finding`.
+- **Validación y Corrección Humana:** Se identificó mediante pruebas que un token de GitHub asignado a una variable llamada `GITHUB_TOKEN` era reportado dos veces (por regex de GitHub y por entropía). Se corrigió agregando validación de deduplicación. Además, se ajustó el regex genérico para que soporte sintaxis de variables como `secret_value` y archivos sin comillas como `.env` o `.yaml`.
+- **Responsable:** Alvaro Marini / Valentina Pértile de la Vega (Review)
+- **PR:** #15
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
