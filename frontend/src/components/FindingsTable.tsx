@@ -66,14 +66,15 @@ export function FindingsTable({
 
   const statusCounts = useMemo(() => {
     const counts: Record<StatusFilter, number> = { all: findings.length, open: 0, resolved: 0, false_positive: 0 }
-    for (const f of findings) counts[f.status] += 1
+    // Los info no tienen estado que gestionar: solo cuentan en «Todos».
+    for (const f of findings) if (!isInformational(f)) counts[f.status] += 1
     return counts
   }, [findings])
 
   const needle = query.trim().toLowerCase()
   const visible = sorted.filter(
     (f) =>
-      (status === 'all' || f.status === status) &&
+      (status === 'all' || (!isInformational(f) && f.status === status)) &&
       (severities.size === 0 || severities.has(effectiveSeverity(f))) &&
       (engine === 'all' || f.engine === engine) &&
       (needle === '' || `${f.title} ${f.file_path} ${f.rule_id} ${f.cve ?? ''}`.toLowerCase().includes(needle)),
@@ -246,7 +247,8 @@ interface FindingRowProps {
 
 function FindingRow({ finding, open, onToggle, onStatusChange, pending }: FindingRowProps) {
   const panelId = useId()
-  const closed = finding.status !== 'open'
+  const informational = isInformational(finding)
+  const closed = !informational && finding.status !== 'open'
   const severity = effectiveSeverity(finding)
 
   return (
@@ -281,7 +283,7 @@ function FindingRow({ finding, open, onToggle, onStatusChange, pending }: Findin
         </span>
         <span className="hidden text-sm text-ink-2 md:block">{ENGINE_LABEL[finding.engine]}</span>
         <span className="row-start-3 md:row-auto">
-          <StatusStamp status={finding.status} />
+          {!informational && <StatusStamp status={finding.status} />}
         </span>
         <span className="t-acc-chevron col-start-2 row-start-1 justify-self-end text-ink-3 md:col-auto md:row-auto">
           <ChevronDown className="size-5" strokeWidth={1.75} aria-hidden="true" />
@@ -296,7 +298,7 @@ function FindingRow({ finding, open, onToggle, onStatusChange, pending }: Findin
               hideHeader
               actions={
                 onStatusChange &&
-                !isInformational(finding) && (
+                !informational && (
                   <FindingStatusActions
                     finding={finding}
                     pending={pending}

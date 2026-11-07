@@ -29,9 +29,9 @@ export function computeStats(findings: readonly FindingRecord[]): DashboardStats
   let counted = 0
   for (const finding of findings) {
     // Los info se muestran como inventario (peso 0) pero no cuentan como
-    // abiertos ni penalizan.
+    // abiertos ni penalizan. Su estado no aplica, así que no se mira.
     if (isInformational(finding)) {
-      if (finding.status === 'open' && !finding.triage?.is_false_positive) {
+      if (!finding.triage?.is_false_positive) {
         bySeverity.info += 1
         byEngine[finding.engine].info += 1
       }
