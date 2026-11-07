@@ -120,6 +120,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** _pendiente_
 
+### [2026-11-06] Estados de escaneo y hallazgos info en el frontend (Módulo B)
+
+- **Problema abordado:** Los estados de escaneo del frontend (`pending`/`done`) no coincidían con el enum `ScanStatus` de la API (`queued`, `running`, `completed`, `failed`): el dashboard no encontraba ningún escaneo terminado y el polling nunca se detenía. Además, los hallazgos `info` (inventario o buenas prácticas sin riesgo, como el CBOM) contaban como abiertos en «Penalizan X de Y» y ofrecían «Marcar resuelto» y «Falso positivo», aunque no son fallas reales.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5). Le pedí alinear todo el flujo de estado de escaneo con el enum oficial, mantener el polling solo mientras el estado sea `queued` o `running` y cortarlo en `completed` (resultados) o `failed` (error); que los `info` no penalicen ni muestren acciones de estado; sin modificar estilos y con commits separados según la convención del proyecto.
+- **Código / Arquitectura generada:** `types/Scan.ts` con `ScanStatus = 'queued' | 'running' | 'completed' | 'failed'`, y los usos actualizados en `ScanProgress.tsx`, `dataSource.ts` (el último escaneo se busca con `completed`) y `mock.json`. `useScanPolling.ts` sigue consultando solo con los estados activos (`queued`, `running`) y se detiene ante cualquier otro, para no quedar consultando si llega un estado desconocido. `DashboardPage.tsx` trata por separado `completed`, `failed` y un estado inesperado. `lib/risk.ts` agrega `isInformational` (usa la severidad ajustada por la IA) y lo excluye de `countsTowardScore`. `stats.ts` deja los `info` fuera de «Penalizan» y de los «abiertos» por vista, pero los sigue mostrando en la fila «inventario» del desglose y en la matriz por motor. `FindingStatusActions` y `FindingsTable` no muestran acciones para los `info`.
+- **Validación y Corrección Humana:** `tsc -b` y `eslint` sin errores. Se buscaron con grep los literales `pending` y `done` de escaneo que quedaban en `src/`. Se confirmó que el peso de `info` ya era 0 en `lib/risk.ts` y en `backend/app/orchestrator/risk.py`, así que el puntaje no cambia; el cambio corrige el conteo y las acciones de la UI. Decisión: no ocultar los `info` del inventario, solo sacarlos de lo que penaliza. Limitaciones aceptadas: un `info` sigue apareciendo en la pestaña «Abiertos» y con el sello «Abierto», porque su `status` en la base es `open`; el primer commit no compila solo (el hook todavía usaba `done`), sí junto con el segundo. Pendiente: probar el polling en el navegador contra la API real.
+- **Responsable:** Matías Balda
+- **PR:** _pendiente_
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
