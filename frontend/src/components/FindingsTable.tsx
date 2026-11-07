@@ -2,7 +2,7 @@ import { ChevronDown, Search, SearchX } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 import { ENGINE_LABEL, SEVERITY_LABEL } from '@/lib/labels'
 import { cn } from '@/lib/cn'
-import { effectiveSeverity } from '@/lib/risk'
+import { effectiveSeverity, isInformational } from '@/lib/risk'
 import { ENGINES, SEVERITIES, type EngineName, type FindingRecord, type FindingStatus, type Severity } from '@/types/Finding'
 import { EmptyState } from './EmptyState'
 import { FindingCard } from './FindingCard'
@@ -295,7 +295,8 @@ function FindingRow({ finding, open, onToggle, onStatusChange, pending }: Findin
               finding={finding}
               hideHeader
               actions={
-                onStatusChange && (
+                onStatusChange &&
+                !isInformational(finding) && (
                   <FindingStatusActions
                     finding={finding}
                     pending={pending}
