@@ -84,14 +84,6 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(sast): motor SAST con Bandit
 
-### [2026-11-06] Reglas de Criptografía Clásica y CryptoEngine
-
-- **Problema abordado:** Detectar algoritmos obsoletos (MD5, DES, RC4), AES-ECB, RSA débil y random inseguro. Evitar duplicación de reportes de RSA con la detección post-cuántica (PQC).
-- **Prompt / Herramienta utilizada:** Claude Opus, refactorización a partir de un PR Review. Se integraron utilidades del módulo PQC (`_MaskStrings`, `_collect_imports`) para parseo y seguridad del código.
-- **Código / Arquitectura generada:** `scan_classic` utiliza el módulo `ast` para Python y resolver alias de importación (detectando librerías `cryptography`, `Crypto`, `hashlib`), capturando excepciones de recursividad de AST. En JS emplea regex con enmascaramiento temporal de literales. En `crypto/__init__.py` se orquestaron ambos módulos, aplicando una deduplicación manual que prioriza el hallazgo "HIGH" clásico por sobre el "MEDIUM" cuántico cuando coinciden en la misma línea.
-- **Validación y Corrección Humana:** Se validó que los literales de clave en `AES.new` ya no se filtren gracias a la reutilización de `_MaskStrings`. Se acotó el falso positivo de `random.choice` limitando su evaluación exclusivamente a cuando el resultado se asigna a variables de seguridad (password, token, secret).
-- **Responsable:** Alvaro Marini / Valentina Pértile de la Vega (Review)
-- **PR:** #16
 ### [2026-11-03] Base del frontend y Dashboard general (Módulo B)
 
 - **Problema abordado:** Entregar la base compartida del frontend (estructura, ruteo, layout con menú lateral, login con Clerk/GitHub, cliente de la API, tipos del contrato y componentes comunes) para que los demás módulos construyan sus vistas encima, y la pantalla del Dashboard general con Risk Score, nota A–F, distribución por motor y severidad, accesos a cada vista y triage de hallazgos.
@@ -127,6 +119,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Validación y Corrección Humana:** Validación ejecutada con Claude Code a pedido de la responsable. El test nuevo falla sin el arreglo y pasa con él; la suite da 147 tests OK y 3 saltados (2 por falta de Bandit en el entorno local y 1 que usa internet, ejecutado aparte contra OSV real y aprobado). Comparación contra OSV real sobre el repo de demo: el motor devuelve 14 hallazgos; antes del arreglo quedaban 2 tras deduplicar (Risk Score 85) y ahora quedan los 14 (9 de lodash y 5 de requests, Risk Score 49). Limitación conocida: las versiones corregidas se informan por vulnerabilidad, no por paquete; en lodash van de 4.17.5 a 4.18.0. Revisé el cambio en `findings.py` y el test.
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** _pendiente_
+
+### [2026-11-06] Reglas de Criptografía Clásica y CryptoEngine
+
+- **Problema abordado:** Detectar algoritmos obsoletos (MD5, DES, RC4), AES-ECB, RSA débil y random inseguro. Evitar duplicación de reportes de RSA con la detección post-cuántica (PQC).
+- **Prompt / Herramienta utilizada:** Claude Opus, refactorización a partir de un PR Review. Se integraron utilidades del módulo PQC (`_MaskStrings`, `_collect_imports`) para parseo y seguridad del código.
+- **Código / Arquitectura generada:** `scan_classic` utiliza el módulo `ast` para Python y resolver alias de importación (detectando librerías `cryptography`, `Crypto`, `hashlib`), capturando excepciones de recursividad de AST. En JS emplea regex con enmascaramiento temporal de literales. En `crypto/__init__.py` se orquestaron ambos módulos, aplicando una deduplicación manual que prioriza el hallazgo "HIGH" clásico por sobre el "MEDIUM" cuántico cuando coinciden en la misma línea.
+- **Validación y Corrección Humana:** Se validó que los literales de clave en `AES.new` ya no se filtren gracias a la reutilización de `_MaskStrings`. Se acotó el falso positivo de `random.choice` limitando su evaluación exclusivamente a cuando el resultado se asigna a variables de seguridad (password, token, secret).
+- **Responsable:** Alvaro Marini / Valentina Pértile de la Vega (Review)
+- **PR:** #16
 
 ### [PLANTILLA — completar en próximas entradas]
 
