@@ -1,14 +1,9 @@
 """Motor SCA: dependencias con vulnerabilidades conocidas (Módulo D)."""
 
-from concurrent.futures import ThreadPoolExecutor
-
 from app.engines.base import Engine, Finding
 from app.engines.sca.findings import has_severity, vulnerability_to_finding
 from app.engines.sca.manifests import find_dependencies
 from app.engines.sca.osv import OsvClient
-
-# Detalles de vulnerabilidades que se piden a OSV al mismo tiempo.
-MAX_PARALLEL_REQUESTS = 8
 
 
 class ScaEngine(Engine):
@@ -32,8 +27,7 @@ class ScaEngine(Engine):
 
         # Cada vulnerabilidad se pide una sola vez, aunque afecte a varias dependencias.
         unique_ids = sorted({vuln_id for ids in vuln_ids for vuln_id in ids})
-        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REQUESTS) as pool:
-            details = dict(zip(unique_ids, pool.map(self.client.get_vuln, unique_ids), strict=True))
+        details = self.client.get_vulns(unique_ids)
 
         findings: list[Finding] = []
         for dependency, ids in zip(dependencies, vuln_ids, strict=True):
