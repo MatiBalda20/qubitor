@@ -342,6 +342,32 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentino Chiappini
 - **PR:** feat(connect): pantalla Conectar repositorio
 
+### [2026-11-08] Panel de remediación y tarjeta de resumen ejecutivo (Módulo E)
+
+- **Problema abordado:** Mostrar la evaluación de la IA en todas las vistas de hallazgos sin que cada módulo la reimplemente, y presentar el resumen ejecutivo del escaneo arriba del dashboard general sin rediseñar el trabajo del Módulo B.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` y los componentes compartidos.
+- **Código / Arquitectura generada:**
+  - `features/ai/`:
+    - `AiTriagePanel.tsx`: falso positivo, cambio de severidad, explicación, remediación en pasos y aviso de IA;
+    - `remediation.ts`;
+    - `ExecutiveSummaryCard.tsx`, `summaryData.ts`, `types.ts` y `mock.json`.
+  - Cambios mínimos en archivos compartidos:
+    - `FindingCard` usa el panel, así lo heredan las vistas de C y D;
+    - `DashboardPage` agrega la tarjeta antes de la nota.
+- **Validación y Corrección Humana:**
+  - 14 tests nuevos (41 en total del frontend):
+    - pasos numerados o con guiones;
+    - falso positivo, cambio de severidad y sin triage;
+    - texto de la IA escapado (un `<img onerror>` no se renderiza);
+    - tarjeta con IA, heurística, cuota agotada, sin resumen y con error;
+    - dashboard completo con la tarjeta integrada.
+  - `eslint`, `tsc -b` y `vite build` sin errores.
+  - Se corrigió durante el desarrollo: dentro de `FindingCard` el panel repetía la «Severidad del motor» que la tarjeta ya mostraba; se agregó `showSeverityChange` para ocultarla ahí.
+  - Hubo que sumar un `matchMedia` mínimo al setup de los tests, porque jsdom no lo trae y el dashboard lo usa.
+  - Limitación: no se revisó en un navegador real.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(ia): panel de remediación y resumen ejecutivo en el dashboard
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
