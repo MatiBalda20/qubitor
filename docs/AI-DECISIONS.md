@@ -300,6 +300,23 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentino Chiappini
 - **PR:** feat(ia): triage de hallazgos con Gemini y resumen ejecutivo
 
+### [2026-11-08] Escaneo en cada push: Worker de webhooks y endpoint interno (Módulo E)
+
+- **Problema abordado:** Lanzar un escaneo automáticamente en cada push sin un servidor propio esperando eventos (equivalente a Lambda + API Gateway), verificando que el evento venga de GitHub y sin crear una cola paralela a la del Módulo A.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), con la skill `workers-best-practices` de Cloudflare (`wrangler.jsonc`, tipos generados, logs y traces, secretos y comparación en tiempo constante).
+- **Código / Arquitectura generada:**
+  - `infra/webhook-worker/`: verifica `X-Hub-Signature-256`, responde `ping`, filtra los push a la rama por defecto, deduplica por `X-GitHub-Delivery` en KV y reenvía firmado a la API.
+  - `app/integrations/github/webhooks.py`: `POST /internal/github/push` verifica la firma HMAC con timestamp, deduplica con `SET NX` en Redis y encola con `enqueue_scan` del Módulo A, con el mismo criterio de «escaneo activo» que la API.
+- **Validación y Corrección Humana:**
+  - Decisión de arquitectura: la auditoría de la Fase 1 mostró que con `REDIS_URL` se puede encolar cualquier función de Python en el scan-worker, así que el Worker **no** publica directo en Redis. Llama a la API, que es la única dueña de la cola.
+  - Pruebas del Worker: 24 tests con vitest (firmas válidas e inválidas, eventos ignorados, duplicados, API caída o con error, cuerpo de más de 2 MiB y JSON inválido) y `wrangler deploy --dry-run` sin errores.
+  - Pruebas del endpoint: 22 tests contra Postgres 17 (firma vieja, otro secreto, cuerpo modificado, valores no canónicos, entregas repetidas, escaneo activo, cola caída y varias organizaciones con el mismo repo).
+  - La compatibilidad de la firma entre TypeScript y Python se fijó con un vector calculado en Python dentro de los tests del Worker.
+  - Se corrigió durante el desarrollo: el endpoint limpiaba con `strip()` una URL con salto de línea y la aceptaba; ahora rechaza todo valor no canónico.
+  - Limitaciones: no se desplegó el Worker ni se configuró un webhook real; KV es eventualmente consistente, por eso la API deduplica también.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(cloud): escaneo automático en cada push con un Worker de webhooks
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
