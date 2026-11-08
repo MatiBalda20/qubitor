@@ -181,7 +181,7 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Código / Arquitectura generada:** `ReportDownloadButton.tsx` pide las URLs recién al hacer clic, porque vencen a los pocos minutos, y abre la del archivo elegido; como R2 lo guarda como descarga, el navegador lo baja sin salir de la página. Si el escaneo no tiene el archivo o el almacenamiento no está disponible (503), muestra un aviso. Con datos de ejemplo el botón no aparece. La vista post-cuántica ofrece «Descargar CBOM (CycloneDX)» y la de Dependencias, «Descargar reporte». En el cliente compartido (`lib/api.ts` y `types/Scan.ts`, Módulo B) se sumó `getScanReport` con el formato de la respuesta de la API.
 - **Validación y Corrección Humana:** *Pendiente.* Hecho hasta ahora: `tsc -b`, `eslint` y `vite build` sin errores. El formato de la respuesta se comparó con `ScanReportOut` del backend. Falta probarlo con la API desplegada y R2 configurado.
 - **Responsable:** Valentina Pértile de la Vega
-- **PR:** #35
+- **PR:** #24
 
 ### [PLANTILLA — completar en próximas entradas]
 
