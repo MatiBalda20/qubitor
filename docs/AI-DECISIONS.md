@@ -316,6 +316,7 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
   - Limitaciones: no se desplegó el Worker ni se configuró un webhook real; KV es eventualmente consistente, por eso la API deduplica también.
 - **Responsable:** Valentino Chiappini
 - **PR:** feat(cloud): escaneo automático en cada push con un Worker de webhooks
+
 ### [2026-11-08] Pantalla «Conectar repositorio» y tests del frontend (Módulo E)
 
 - **Problema abordado:** La ruta `/connect` era un placeholder. Hacía falta listar y buscar los repos de GitHub del usuario, conectar uno y lanzar su primer escaneo, y poder pegar la URL de un repo público. El frontend tampoco tenía ningún test.
