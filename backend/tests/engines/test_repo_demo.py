@@ -29,7 +29,8 @@ def repo_demo(tmp_path_factory):
 def test_detecta_la_criptografia_post_cuantica_plantada(repo_demo):
     hallazgos = {(h.rule_id, h.file_path, h.line, h.severity.value)
                  for h in CryptoEngine().scan(repo_demo)
-                 if h.rule_id.startswith("crypto.pqc.")}
+                 # Solo el código: los certificados del demo tienen su propio test (test_certs.py).
+                 if h.rule_id.startswith("crypto.pqc.") and h.file_path.startswith("app/")}
 
     assert hallazgos == {
         ("crypto.pqc.rsa-keygen", "app/keys.py", 10, "medium"),
