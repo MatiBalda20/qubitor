@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, Integer, Float, ForeignKey, DateTime,
-    UniqueConstraint, Index, Text, Enum, Boolean
+    UniqueConstraint, Index, Text, Enum, Boolean, func
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -50,7 +50,7 @@ class Repository(Base):
     full_name = Column(String, nullable=False)
     url = Column(String, nullable=False)
     default_branch = Column(String, default="main")
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc))
 
     organization = relationship("Organization", back_populates="repositories")
     scans = relationship("Scan", back_populates="repository", cascade="all, delete-orphan")
@@ -65,8 +65,8 @@ class Scan(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     repository_id = Column(UUID(as_uuid=True), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False)
-    status = Column(Enum(ScanStatus, values_callable=lambda e: [x.value for x in e]), nullable=False, default=ScanStatus.QUEUED)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    status = Column(Enum(ScanStatus, values_callable=lambda e: [x.value for x in e]), nullable=False, default=ScanStatus.QUEUED, server_default='queued')
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc))
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
     commit_sha = Column(String, nullable=True)
@@ -100,9 +100,9 @@ class Finding(Base):
     description = Column(Text, nullable=False)
     cwe = Column(String, nullable=True)
     cve = Column(String, nullable=True)
-    metadata_ = Column("metadata", JSONB, default=dict) # Alias para evitar conflicto con .metadata de SQLAlchemy
+    metadata_ = Column("metadata", JSONB, default=dict)
 
-    status = Column(Enum(FindingStatus, values_callable=lambda e: [x.value for x in e]), nullable=False, default=FindingStatus.OPEN)
+    status = Column(Enum(FindingStatus, values_callable=lambda e: [x.value for x in e]), nullable=False, default=FindingStatus.OPEN, server_default='open')
     ai_is_false_positive = Column(Boolean, nullable=True)
     ai_adjusted_severity = Column(Enum(Severity, values_callable=lambda e: [x.value for x in e]), nullable=True)
     ai_explanation = Column(Text, nullable=True)
