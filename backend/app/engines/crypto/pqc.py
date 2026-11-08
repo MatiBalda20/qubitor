@@ -283,7 +283,7 @@ def _parse_python(path: Path) -> ast.Module | None:
         return None
     try:
         return ast.parse(source, filename=str(path))
-    except (SyntaxError, ValueError):
+    except (SyntaxError, ValueError, RecursionError):
         return None
 
 

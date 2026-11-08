@@ -120,6 +120,33 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** _pendiente_
 
+### [2026-11-06] Reglas de Criptografía Clásica y CryptoEngine
+
+- **Problema abordado:** Detectar algoritmos obsoletos (MD5, DES, RC4), AES-ECB, RSA débil y random inseguro. Evitar duplicación de reportes de RSA con la detección post-cuántica (PQC).
+- **Prompt / Herramienta utilizada:** Claude Opus, refactorización a partir de un PR Review. Se integraron utilidades del módulo PQC (`_MaskStrings`, `_collect_imports`) para parseo y seguridad del código.
+- **Código / Arquitectura generada:** `scan_classic` utiliza el módulo `ast` para Python y resolver alias de importación (detectando librerías `cryptography`, `Crypto`, `hashlib`), capturando excepciones de recursividad de AST. En JS emplea regex con enmascaramiento temporal de literales. En `crypto/__init__.py` se orquestaron ambos módulos, aplicando una deduplicación manual que prioriza el hallazgo "HIGH" clásico por sobre el "MEDIUM" cuántico cuando coinciden en la misma línea.
+- **Validación y Corrección Humana:** Se validó que los literales de clave en `AES.new` ya no se filtren gracias a la reutilización de `_MaskStrings`. Se acotó el falso positivo de `random.choice` limitando su evaluación exclusivamente a cuando el resultado se asigna a variables de seguridad (password, token, secret).
+- **Responsable:** Alvaro Marini / Valentina Pértile de la Vega (Review)
+- **PR:** #16
+
+### [2026-11-06] Modelos de Base de Datos y Conexión a Supabase
+
+- **Problema abordado:** Diseñar el esquema relacional en SQLAlchemy respetando el modelo de datos (organizaciones, usuarios, repositorios, escaneos, hallazgos) y configurar la conexión para soportar el pooler transaccional de Supabase (PgBouncer).
+- **Prompt / Herramienta utilizada:** Claude Opus, refinado mediante revisión cruzada en GitHub (PR Review) para ajustar compatibilidad con psycopg3 y formateo de Enums.
+- **Código / Arquitectura generada:** `database.py` implementa `create_engine` con `pool_pre_ping=True` y `prepare_threshold=None` para evitar fallos de prepared statements en el puerto 6543 de Supabase. `models.py` define las tablas con cascadas, índices compuestos y tipos JSONB, almacenando los Enums por su valor en minúscula (`values_callable`).
+- **Validación y Corrección Humana:** Se detectó en la revisión de código que los Enums de Python se guardaban en mayúscula (ej. `HIGH`), rompiendo el contrato que usa minúsculas (`high`); se corrigió con lambdas en SQLAlchemy. Además, se configuró explícitamente el `prepare_threshold` tras validar las limitaciones del pooler transaccional.
+- **Responsable:** Alvaro Marini / Juan Ignacio Wilt (Review)
+- **PR:** #18
+
+### [2026-11-06] Dockerfile para Scan-Worker aislado
+
+- **Problema abordado:** Crear un entorno de ejecución seguro y aislado para los motores de análisis, asegurando que se ejecuten sin privilegios de root, tengan Git instalado para clonar repositorios y no expongan el contenedor a fallos de seguridad por código de terceros.
+- **Prompt / Herramienta utilizada:** Claude Opus, revisión humana (PR Review cruzado) para ajustes de contexto de build, variables de entorno de Redis y exclusión de archivos temporales.
+- **Código / Arquitectura generada:** `backend/worker/Dockerfile` basado en `python:3.11-slim`. Se crea el usuario no privilegiado `qubitor`, se instala `git` y se define `/tmp/scans`. Se añadió un `backend/.dockerignore` para evitar que `.env` y `.venv` se filtren en la imagen. La conexión a la cola usa la variable `$REDIS_URL` inyectada dinámicamente en Render.
+- **Validación y Corrección Humana:** Se corrigió el contexto de build en las instrucciones para construir correctamente la imagen. Se modificó el `CMD` fijo de localhost para que lea variables de entorno (`$REDIS_URL`), y se agregó el `.dockerignore` que faltaba para proteger secretos locales e ignorar carpetas pesadas.
+- **Responsable:** Alvaro Marini / Juan Ignacio Wilt (Review)
+- **PR:** #17
+
 ### [2026-11-06] Estados de escaneo y hallazgos info en el frontend (Módulo B)
 
 - **Problema abordado:** Los estados de escaneo del frontend (`pending`/`done`) no coincidían con el enum `ScanStatus` de la API (`queued`, `running`, `completed`, `failed`): el dashboard no encontraba ningún escaneo terminado y el polling nunca se detenía. Además, los hallazgos `info` (inventario o buenas prácticas sin riesgo, como el CBOM) contaban como abiertos en «Penalizan X de Y» y ofrecían «Marcar resuelto» y «Falso positivo», aunque no son fallas reales.
