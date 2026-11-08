@@ -138,6 +138,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Alvaro Marini / Juan Ignacio Wilt (Review)
 - **PR:** #18
 
+### [2026-11-06] Dockerfile para Scan-Worker aislado
+
+- **Problema abordado:** Crear un entorno de ejecución seguro y aislado para los motores de análisis, asegurando que se ejecuten sin privilegios de root, tengan Git instalado para clonar repositorios y no expongan el contenedor a fallos de seguridad por código de terceros.
+- **Prompt / Herramienta utilizada:** Claude Opus, revisión humana (PR Review cruzado) para ajustes de contexto de build, variables de entorno de Redis y exclusión de archivos temporales.
+- **Código / Arquitectura generada:** `backend/worker/Dockerfile` basado en `python:3.11-slim`. Se crea el usuario no privilegiado `qubitor`, se instala `git` y se define `/tmp/scans`. Se añadió un `backend/.dockerignore` para evitar que `.env` y `.venv` se filtren en la imagen. La conexión a la cola usa la variable `$REDIS_URL` inyectada dinámicamente en Render.
+- **Validación y Corrección Humana:** Se corrigió el contexto de build en las instrucciones para construir correctamente la imagen. Se modificó el `CMD` fijo de localhost para que lea variables de entorno (`$REDIS_URL`), y se agregó el `.dockerignore` que faltaba para proteger secretos locales e ignorar carpetas pesadas.
+- **Responsable:** Alvaro Marini / Juan Ignacio Wilt (Review)
+- **PR:** #17
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
