@@ -23,6 +23,7 @@ from app.api.schemas import (
     repository_out,
     scan_out,
 )
+from app.config import max_active_scans_per_org
 from app.engines.base import Severity
 from app.models.database import get_db
 from app.models.models import Finding, FindingStatus, Repository, Scan, ScanStatus
@@ -106,6 +107,16 @@ def start_scan(
         active.status = ScanStatus.FAILED
         active.error = "El escaneo no terminó a tiempo: el worker se detuvo o superó el tiempo límite"
         active.finished_at = datetime.now(timezone.utc)
+
+    # Cada escaneo ocupa el worker hasta 5 minutos: una organización no puede
+    # acaparar la cola y dejar esperando a las demás.
+    limit = max_active_scans_per_org()
+    if _active_scans_of(db, user) >= limit:
+        db.commit()  # guarda el escaneo trabado que se marcó como fallido
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"Tu organización ya tiene {limit} escaneos en curso. Esperá a que termine alguno.",
+        )
 
     scan = Scan(repository_id=repo.id, status=ScanStatus.QUEUED)
     db.add(scan)
@@ -193,6 +204,20 @@ def _get_scan(db: Session, scan_id: uuid.UUID, user: CurrentUser) -> Scan:
     if scan is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe el escaneo")
     return scan
+
+
+def _active_scans_of(db: Session, user: CurrentUser) -> int:
+    """Escaneos en cola o en curso de la organización, sin contar los trabados."""
+    cutoff = datetime.now(timezone.utc) - STALE_AFTER
+    return db.scalar(
+        select(func.count(Scan.id))
+        .join(Repository)
+        .where(
+            Repository.organization_id == user.organization_id,
+            Scan.status.in_(_ACTIVE),
+            func.coalesce(Scan.started_at, Scan.created_at) > cutoff,
+        )
+    )
 
 
 def _is_stale(scan: Scan) -> bool:
