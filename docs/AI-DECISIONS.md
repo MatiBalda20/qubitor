@@ -235,6 +235,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #24
 
+### [2026-11-08] Límite de escaneos simultáneos por organización
+
+- **Problema abordado:** El componente cloud del Módulo A pide un límite de concurrencia. Cada escaneo ocupa el worker hasta 5 minutos, así que una organización podía encolar escaneos de muchos repos y dejar esperando a las demás.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** En `POST /repositories/{id}/scans`, si la organización ya tiene `MAX_ACTIVE_SCANS_PER_ORG` escaneos en cola o en curso (por defecto 2), responde 429 con un mensaje para el usuario. Se cuentan con una sola consulta, sin los escaneos trabados. `max_active_scans_per_org()` en `app/config.py` ignora valores inválidos o no positivos. 10 tests nuevos.
+- **Validación y Corrección Humana:** Probado contra Postgres 16: el tercer escaneo se rechaza, al terminar uno se libera el lugar, el límite es por organización, reescanear un repo que ya está en curso devuelve el mismo escaneo sin contar dos veces y un escaneo trabado no ocupa lugar. El plan habla de un límite «por plan», pero la base todavía no tiene planes de suscripción: por eso es una variable de entorno, que se puede reemplazar por un valor por organización cuando existan.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(api): limitar los escaneos simultáneos por organización
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
