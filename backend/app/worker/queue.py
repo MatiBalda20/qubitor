@@ -34,11 +34,24 @@ def get_queue(connection: Redis | None = None) -> Queue:
 
 
 def enqueue_scan(scan_id: str, repo_url: str, connection: Redis | None = None) -> Job:
-    """Publica un escaneo. El id del trabajo evita encolar dos veces el mismo."""
-    return get_queue(connection).enqueue_call(
+    """Publica un escaneo una sola vez: si ya se encoló, devuelve ese trabajo.
+
+    RQ no rechaza un id repetido: lo vuelve a poner en la cola y el escaneo
+    corre dos veces. Por eso se marca en Redis con SET NX, que es atómico
+    aunque lleguen dos pedidos al mismo tiempo.
+    """
+    connection = connection or get_connection()
+    queue = get_queue(connection)
+    job_id = f"scan-{scan_id}"
+    if not connection.set(f"qubitor:enqueued:{job_id}", 1, nx=True, ex=FAILURE_TTL_SECONDS):
+        existing = queue.fetch_job(job_id)
+        if existing is not None:
+            return existing
+        # La marca quedó pero el trabajo ya venció en Redis: se puede volver a encolar.
+    return queue.enqueue_call(
         SCAN_JOB,
         args=(scan_id, repo_url),
-        job_id=f"scan-{scan_id}",
+        job_id=job_id,
         timeout=JOB_TIMEOUT_SECONDS,
         result_ttl=RESULT_TTL_SECONDS,
         failure_ttl=FAILURE_TTL_SECONDS,
