@@ -5,6 +5,7 @@ import tempfile
 
 from rq import get_current_job
 
+from app.ai.pipeline import apply_ai
 from app.engines.base import Engine
 from app.engines.crypto import CryptoEngine
 from app.engines.sast import SastEngine
@@ -40,6 +41,8 @@ def run_scan(scan_id: str, repo_url: str) -> dict:
         if result.failed:
             store.mark_failed(scan_id, "Fallaron todos los motores")
             return _summary("failed", result=result)
+        # Triage con Gemini y resumen ejecutivo (Módulo E). No lanza: si falla, se guarda sin triage.
+        result = apply_ai(scan_id, result)
         store.save_result(scan_id, commit_sha, result)
         # Reporte y CBOM en R2 (Módulo D). Si el bucket falla no lanza: el escaneo ya quedó guardado.
         archive_scan(scan_id, repo_url, commit_sha, result)
@@ -74,5 +77,6 @@ def _summary(
             "grade": result.grade,
             "engine_errors": result.errors,
             "duration_seconds": result.duration_seconds,
+            "triaged": len(result.triage),
         }
     return summary

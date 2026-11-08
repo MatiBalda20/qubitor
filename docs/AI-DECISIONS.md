@@ -267,6 +267,39 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentino Chiappini
 - **PR:** feat(github): listar, conectar y clonar los repos de GitHub del usuario
 
+### [2026-11-08] Triage de hallazgos con Gemini y resumen ejecutivo (Módulo E)
+
+- **Problema abordado:** Los motores devuelven hallazgos crudos. Hacía falta que Gemini indique falsos positivos, severidad real y remediación por hallazgo, y un resumen ejecutivo del repo, sin enviar secretos ni archivos completos y sin que una falla de la IA haga perder hallazgos o frene el escaneo.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), con la skill `gemini-api-dev` para usar el SDK y los modelos vigentes (Interactions API, `google-genai`), siguiendo la sección 5 del plan (response_schema) y el riesgo de cuota de la sección 10.
+- **Código / Arquitectura generada:**
+  - `app/ai/`:
+    - `masking.py`: segundo enmascarado antes de enviar;
+    - `gemini.py`: cliente con salida estructurada, `store=False` y errores de cuota, caída y respuesta inválida;
+    - `triage.py`: lotes de 15, tope de 60, validación por fingerprint, caché por contenido y límites de seguridad;
+    - `cache.py`: reutiliza evaluaciones del mismo repo desde la base;
+    - `summary.py`: resumen con Gemini o heurístico;
+    - `pipeline.py`: `apply_ai`, que no lanza;
+    - `routes.py`: `GET /scans/{id}/summary`.
+  - Integración en archivos del Módulo A: `ScanResult` suma `triage` y `summary` con valores por defecto, `SqlScanStore` guarda `findings.ai_*` y `scans.ai_summary`, y `job.py` llama a `apply_ai`. Migración `b41d7e2a9c55`.
+- **Validación y Corrección Humana:**
+  - Tests con Gemini simulado (y con Postgres 17 para caché, guardado y endpoint):
+    - lotes, tope y prioridad;
+    - secretos que no salen y fragmentos recortados a 5 líneas;
+    - respuestas inválidas y fingerprints ajenos o repetidos;
+    - cuota agotada, dos errores seguidos y límite de tiempo;
+    - caché por contenido, sin compartirse entre organizaciones;
+    - score recalculado y job completo con Gemini caído.
+  - Contra la API real se verificó que el SDK acepta los parámetros (con una clave inválida responde `API_KEY_INVALID`) y que su error de cuota trae `status_code = 429`.
+  - Riesgo identificado y mitigado: **prompt injection** desde el código escaneado. Un comentario en el repo podría pedirle a la IA que marque su propio hallazgo como falso positivo y baje el Risk Score. Además de indicarle que trate el fragmento como datos, se fijaron límites: un secreto nunca es falso positivo ni baja de severidad, y nada baja más de dos niveles.
+  - Se corrigió durante el desarrollo: los fixtures de los tests creaban las tablas antes de importar los modelos y el primer test fallaba si corría solo.
+  - Decisiones:
+    - caché en la base, en lugar de un servicio nuevo, porque reutiliza los escaneos del mismo repo;
+    - resumen heurístico como fallback, como pedía el Checkpoint 1;
+    - modelo por defecto `gemini-3.5-flash-lite` por la cuota gratuita.
+  - Limitaciones: no se probó con una clave real de Gemini, y los hallazgos más allá del tope de 60 quedan sin triage.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(ia): triage de hallazgos con Gemini y resumen ejecutivo
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
