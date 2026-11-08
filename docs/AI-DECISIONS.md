@@ -235,6 +235,38 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #24
 
+### [2026-11-08] Integración con GitHub: repos del usuario, conexión y clonado de privados (Módulo E)
+
+- **Problema abordado:** Hasta ahora solo se podía pegar la URL de un repo público. Hacía falta listar los repos de la cuenta de GitHub del usuario, conectar uno validándolo contra GitHub y clonar repos privados, sin exponer el token OAuth de GitHub ni confundirlo con el JWT de sesión de Clerk.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo el plan de la sección 4 (Módulo E) y las correcciones de seguridad de la Fase 1 (SEC-02 y SEC-09).
+- **Código / Arquitectura generada:**
+  - `app/integrations/github/`:
+    - `clerk.py`: token OAuth de GitHub desde la Backend API de Clerk;
+    - `client.py`: cliente de la API de GitHub con paginación por cabecera `Link` y errores propios;
+    - `routes.py`: `GET` y `POST /github/repositories`;
+    - `tokens.py`: el worker resuelve el token de quien conectó un repo privado;
+    - `settings.py` y `errors.py`.
+  - `app/worker/clone.py`: validación con `fullmatch`, entorno mínimo para Git y token opcional como cabecera HTTP por `GIT_CONFIG_*`.
+  - Migración `9c2f1a7d3b10`: `repositories.is_private` y `repositories.connected_by_user_id`.
+  - `job.py` pide el token antes de clonar.
+- **Validación y Corrección Humana:**
+  - Tests con GitHub y Clerk simulados, más los endpoints y la resolución del token contra Postgres 17:
+    - paginación, errores 401/403/404/429/500 y nombres inválidos sin llamar a GitHub;
+    - repos de más de 50 MB, privados no habilitados y sin permiso de lectura;
+    - aislamiento entre organizaciones, y que ninguna respuesta incluya el token.
+  - Se comprobó que Git no recibe `DATABASE_URL`, `REDIS_URL` ni `CLERK_SECRET_KEY`, y que el token no aparece en los argumentos del proceso.
+  - Con red: el clonado real de `octocat/Hello-World` funciona con el entorno mínimo; con un token inválido el error no lo filtra y no queda escrito en disco.
+  - La migración se probó con upgrade, downgrade y upgrade, y `alembic check` no encuentra diferencias.
+  - Se corrigió durante el desarrollo:
+    - importar la configuración desde `routes.py` hacía que el worker sin `DATABASE_URL` no arrancara; se movió a `settings.py` y se agregó un test que importa el job sin base;
+    - los clonados falsos de los tests del Módulo A no aceptaban el parámetro `token`, así que el job solo lo pasa cuando hay uno.
+  - Decisiones:
+    - 409 en lugar de 401 para «GitHub no vinculado», porque el frontend trata el 401 como sesión vencida;
+    - los repos privados quedan detrás de `GITHUB_PRIVATE_REPOS=false` hasta corregir la ejecución de Bandit (SEC-01), porque el worker necesitaría `CLERK_SECRET_KEY`.
+  - Limitaciones: Clerk exige credenciales propias de GitHub para leer el token; el nombre del proveedor (`oauth_github`/`github`) se prueba en ese orden porque la documentación no es consistente.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(github): listar, conectar y clonar los repos de GitHub del usuario
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
