@@ -174,6 +174,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #24
 
+### [2026-11-08] Urgencia de migración con la desigualdad de Mosca (frontend/src/features/pqc)
+
+- **Problema abordado:** El porcentaje vulnerable a Shor no dice cuán urgente es migrar. La desigualdad de Mosca lo responde: si los años que algo tiene que seguir protegido (X) más los que lleva migrar (Y) superan los que faltan para una computadora cuántica relevante (Z), ya está en riesgo hoy.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md`.
+- **Código / Arquitectura generada:** `mosca.ts` separa los usos activos vulnerables a Shor en dos grupos: datos cifrados e intercambio de claves (incluye las claves de uso indefinido, el caso más exigente) y firmas, cada uno con su propio X. Calcula X + Y, el margen Z − (X + Y) y qué hallazgos quedan en riesgo. Valores por defecto: 10 años para datos, 2 para firmas, 5 para migrar y Z hasta 2035, el año en que NIST deja de permitir RSA y curvas elípticas (NIST IR 8547). `MoscaCard.tsx` permite cambiar X, Y y Z y muestra el resultado de cada grupo; `CbomTable.tsx` marca los usos en riesgo. `quantum.ts` exporta `shorUse` para saber para qué se usa cada algoritmo.
+- **Validación y Corrección Humana:** *Pendiente.* Hecho hasta ahora: `tsc -b`, `eslint` y `vite build` sin errores. Con un script se comprobó con los datos del demo: con los valores por defecto los tres usos de Shor quedan en riesgo (15 > 9); con X = 2 e Y = 3 quedan con margen; una firma ECDSA va al grupo de firmas; un hallazgo resuelto no cuenta; y los años fuera de rango o vacíos se acotan entre 0 y 50.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #32
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
