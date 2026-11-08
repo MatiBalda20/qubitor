@@ -1,4 +1,5 @@
-# backend/worker/Dockerfile
+# Se construye con backend/ como contexto:
+#   docker build -f backend/worker/Dockerfile backend
 # Usamos una imagen base oficial de Python ligera
 FROM python:3.11-slim
 
@@ -25,7 +26,6 @@ RUN mkdir -p /app ${REPOS_DIR} \
 WORKDIR /app
 
 # Copiamos el archivo de dependencias e instalamos (como root, pero quedan disponibles globalmente)
-# Nota: requirements.txt se agregará en la PR de la API
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -35,6 +35,5 @@ COPY . /app/
 # Cambiamos al usuario no privilegiado
 USER qubitor
 
-# Ejecutamos con sh -c para que evalúe la variable de entorno $REDIS_URL.
-# La API encola los trabajos en JSON, así que el worker los lee en ese formato.
-CMD ["sh", "-c", "exec rq worker scans --url \"$REDIS_URL\" --serializer rq.serializers.JSONSerializer"]
+# REDIS_URL se carga en el panel de Render; la lee app/config.py al arrancar.
+CMD ["python", "-m", "app.worker.run"]

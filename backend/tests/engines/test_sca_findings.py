@@ -46,6 +46,7 @@ def test_convierte_la_vulnerabilidad_en_un_hallazgo_completo():
     assert h.metadata["fixed_version"] == "2.20.0"
     assert h.metadata["upgrade_command"] == "pip install requests==2.20.0"
     assert h.metadata["cvss_vector"].startswith("CVSS:3.1/")
+    assert h.metadata["cvss"] == 7.5
     assert h.metadata["severity_source"] == "github"
 
 
@@ -78,6 +79,42 @@ def test_moderate_de_github_es_medium_y_sin_gravedad_queda_medium_marcada():
 
     assert vulnerability_to_finding(REQUESTS, moderada).severity == Severity.MEDIUM
     h = vulnerability_to_finding(REQUESTS, sin_gravedad)
+    assert h.severity == Severity.MEDIUM
+    assert h.metadata["severity_source"] == "desconocida"
+
+
+def test_sin_gravedad_de_github_usa_el_cvss():
+    vuln = {"id": "PYSEC-X", "severity": [
+        {"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"},
+    ]}
+
+    h = vulnerability_to_finding(REQUESTS, vuln)
+
+    assert h.severity == Severity.CRITICAL
+    assert h.metadata["cvss"] == 9.8
+    assert h.metadata["severity_source"] == "cvss"
+
+
+def test_con_cvss_4_y_3_usa_el_3_para_el_puntaje():
+    vuln = {"id": "A", "database_specific": {"severity": "MODERATE"}, "severity": [
+        {"type": "CVSS_V4", "score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:L/SC:N/SI:N/SA:N"},
+        {"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L"},
+    ]}
+
+    h = vulnerability_to_finding(REQUESTS, vuln)
+
+    assert h.metadata["cvss_vector"].startswith("CVSS:3.1/")
+    assert h.metadata["cvss"] == 6.5
+
+
+def test_solo_cvss_4_no_tiene_puntaje():
+    vuln = {"id": "A", "severity": [
+        {"type": "CVSS_V4", "score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:L/SC:N/SI:N/SA:N"},
+    ]}
+
+    h = vulnerability_to_finding(REQUESTS, vuln)
+
+    assert h.metadata["cvss"] is None
     assert h.severity == Severity.MEDIUM
     assert h.metadata["severity_source"] == "desconocida"
 

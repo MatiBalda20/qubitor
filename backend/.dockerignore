@@ -1,9 +1,10 @@
-# backend/.dockerignore
-.venv/
-venv/
-__pycache__/
-*.py[cod]
 .env
 .env.*
-.pytest_cache/
-tests/
+!.env.example
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+tests
+worker/Dockerfile
