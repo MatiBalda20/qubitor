@@ -126,7 +126,24 @@ def test_escaneo_parcial_si_falla_un_motor(store, clones, monkeypatch):
 
 
 def test_motores_registrados():
-    assert {motor.name for motor in job_module.default_engines()} == {"sast", "sca", "secrets"}
+    assert {motor.name for motor in job_module.default_engines()} == {"sast", "sca", "secrets", "crypto"}
+
+
+def test_detecta_criptografia_debil(store, clones, monkeypatch):
+    def clon_con_md5(url, destino):
+        os.makedirs(destino)
+        Path(destino, "auth.py").write_text("import hashlib\nh = hashlib.md5(b'x')\n")
+        return "a" * 40
+
+    monkeypatch.setattr(job_module, "clone_repository", clon_con_md5)
+    motores = [m for m in job_module.default_engines() if m.name in ("crypto", "sast")]
+    monkeypatch.setattr(job_module, "default_engines", lambda: motores)
+
+    resumen = job_module.run_scan("abc", URL)
+
+    assert resumen["status"] == "completed"
+    assert resumen["engine_errors"] == {}
+    assert resumen["findings"] >= 1
 
 
 # Con la cola: se ejecuta con un worker real de RQ sobre Redis falso.

@@ -6,6 +6,7 @@ import tempfile
 from rq import get_current_job
 
 from app.engines.base import Engine
+from app.engines.crypto import CryptoEngine
 from app.engines.sast import SastEngine
 from app.engines.sca import ScaEngine
 from app.engines.secrets.engine import SecretsEngine
@@ -15,8 +16,7 @@ from app.worker.store import get_store
 
 
 def default_engines() -> list[Engine]:
-    # CryptoEngine se suma cuando se mergee (PR #16).
-    return [SastEngine(), ScaEngine(), SecretsEngine()]
+    return [SastEngine(), ScaEngine(), SecretsEngine(), CryptoEngine()]
 
 
 def run_scan(scan_id: str, repo_url: str) -> dict:
