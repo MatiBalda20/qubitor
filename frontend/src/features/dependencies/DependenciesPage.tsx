@@ -124,7 +124,7 @@ function DependenciesView({ data, onCopy }: { data: DependenciesData; onCopy: (c
         }
         actions={
           <>
-            {scan && <ReportDownloadButton scanId={scan.id} kind="report" label="Descargar reporte" />}
+            {scan && <ReportDownloadButton scanId={scan.id} kind="pdf" label="Descargar reporte (PDF)" />}
             {commands.length > 0 && (
               <button
                 type="button"

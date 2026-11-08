@@ -54,6 +54,8 @@ export interface ScanReport {
   report_url: string | null
   /** Inventario criptográfico en CycloneDX 1.6; null si no está guardado. */
   cbom_url: string | null
+  /** Reporte en PDF; null si no está guardado. */
+  pdf_url: string | null
   /** Segundos que duran las URLs. */
   expires_in: number
 }

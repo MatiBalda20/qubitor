@@ -5,8 +5,8 @@ import { api, ApiError } from '@/lib/api'
 import { USE_MOCKS } from '@/lib/config'
 
 /**
- * Descarga un archivo del escaneo guardado en R2 (Módulo D): el reporte JSON o
- * el CBOM en CycloneDX. La URL firmada vence a los pocos minutos, así que se
+ * Descarga un archivo del escaneo guardado en R2 (Módulo D): el reporte en PDF
+ * o en JSON, o el CBOM en CycloneDX. La URL firmada vence a los pocos minutos, así que se
  * pide recién al hacer clic. Con datos de ejemplo no hay nada que descargar.
  */
 export function ReportDownloadButton({
@@ -15,7 +15,7 @@ export function ReportDownloadButton({
   label,
 }: {
   scanId: string
-  kind: 'report' | 'cbom'
+  kind: 'report' | 'cbom' | 'pdf'
   label: string
 }) {
   const toast = useToast()
@@ -27,7 +27,7 @@ export function ReportDownloadButton({
     setBusy(true)
     try {
       const report = await api.getScanReport(scanId)
-      const url = kind === 'cbom' ? report.cbom_url : report.report_url
+      const url = { report: report.report_url, cbom: report.cbom_url, pdf: report.pdf_url }[kind]
       if (!url) {
         toast({ message: 'Este escaneo no tiene el archivo guardado.', tone: 'error' })
         return
