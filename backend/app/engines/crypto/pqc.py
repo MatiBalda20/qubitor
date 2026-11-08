@@ -246,6 +246,11 @@ def scan_pqc(repo_path: str) -> list[Finding]:
         if source is None:
             continue
         findings.extend(_scan_js_source(source, path.relative_to(repo).as_posix()))
+    # Certificados y claves versionados (.pem, .crt, .key). Se importa acá porque
+    # certs.py usa funciones de este archivo.
+    from app.engines.crypto.certs import scan_certs
+
+    findings.extend(scan_certs(repo_path))
     return findings
 
 
