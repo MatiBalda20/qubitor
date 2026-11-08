@@ -54,7 +54,7 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Código / Arquitectura generada:** Detección con expresiones regulares (`JS_RULES`) sobre el código sin comentarios, reutilizando las mismas reglas que Python. Cubre `generateKeyPair(Sync)` (RSA, EC, DSA, DH), `createECDH`, `createDiffieHellman`, `createCipheriv` (AES por tamaño y ChaCha20) y `createHash` (inventario). Una función propia quita los comentarios `//` y `/* */` respetando los textos entre comillas y conservando los números de línea. El snippet se corta en el nombre del algoritmo para no incluir claves. Se generalizaron `_iter_files`, `_read_text` y `_make_finding` para los dos lenguajes. 9 tests nuevos (46 en total).
 - **Validación y Corrección Humana:** Revisé la explicación de cada pieza antes del commit (patrones de `JS_RULES`, quitado de comentarios y armado del snippet). Ejecuté la suite de tests (46 tests, todos pasan) y escaneé el repo de demo `qubitor-demo-vulnerable`: la falla plantada en `app/signing.js` aparece como `crypto.pqc.ec-keygen` en la línea correcta. Validé los casos negativos: comentarios `//` y `/* */` que mencionan funciones criptográficas, URLs con `//` dentro de textos, tipos de clave ya post-cuánticos (`ml-dsa-65`) y MD5, que corresponde al Módulo C. Verifiqué que el snippet no incluya la clave pasada a `createCipheriv`. Decidí usar expresiones regulares en lugar de un parser de JavaScript para no sumar dependencias al scan-worker, aceptando estas limitaciones para el MVP: no se resuelve de dónde viene cada nombre (una función propia llamada `createECDH` también se detectaría), no se cubre WebCrypto (`crypto.subtle`), y como `crypto.sign` no indica el algoritmo, la firma ECDSA de la demo se reporta como generación de clave de curva elíptica (el riesgo es el mismo).
 - **Responsable:** Valentina Pértile de la Vega
-- **PR:** _pendiente_
+- **PR:** #9
 
 
 
@@ -118,7 +118,7 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Código / Arquitectura generada:** `rule_id` pasa a ser `sca.osv.<id de la vulnerabilidad>` en `findings.py`. Test nuevo que pasa dos fallas del mismo paquete por `deduplicate`.
 - **Validación y Corrección Humana:** Validación ejecutada con Claude Code a pedido de la responsable. El test nuevo falla sin el arreglo y pasa con él; la suite da 147 tests OK y 3 saltados (2 por falta de Bandit en el entorno local y 1 que usa internet, ejecutado aparte contra OSV real y aprobado). Comparación contra OSV real sobre el repo de demo: el motor devuelve 14 hallazgos; antes del arreglo quedaban 2 tras deduplicar (Risk Score 85) y ahora quedan los 14 (9 de lodash y 5 de requests, Risk Score 49). Limitación conocida: las versiones corregidas se informan por vulnerabilidad, no por paquete; en lodash van de 4.17.5 a 4.18.0. Revisé el cambio en `findings.py` y el test.
 - **Responsable:** Valentina Pértile de la Vega
-- **PR:** _pendiente_
+- **PR:** #19
 
 ### [2026-11-06] Reglas de Criptografía Clásica y CryptoEngine
 
@@ -163,7 +163,7 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Código / Arquitectura generada:** `packages.ts` agrupa los hallazgos por paquete y manifiesto, calcula la versión que corrige todas las fallas pendientes (descarta resueltas y falsos positivos), la peor severidad, el CVSS máximo y el comando `pip install` / `npm install`. `PackageTable.tsx` muestra cada paquete en un acordeón con sus CVE (enlace a NVD u OSV), CVSS y versión corregida, y botones para copiar el comando. `DependenciesPage.tsx` cubre carga, error, vacío y datos, y ofrece copiar todos los comandos juntos. `mock.json` sale de la salida real del motor sobre el repo de demo. En `App.tsx` se reemplazó el placeholder por la vista.
 - **Validación y Corrección Humana:** `tsc -b`, `eslint` y `vite build` sin errores. Con un script se comprobó la agrupación con los datos del demo (lodash → 4.18.0, requests → 2.33.0) y casos borde: fallas resueltas, falsos positivos, fallas sin versión corregida y comparación de versiones. Revisé la vista en el navegador: el acordeón, los enlaces a los CVE y el botón de copiar funcionan; se corrigió la letra del rótulo «instalada» en pantallas angostas. Limitación: la vista usa datos de ejemplo hasta que la API tenga los endpoints de escaneos.
 - **Responsable:** Valentina Pértile de la Vega
-- **PR:** _pendiente_
+- **PR:** #23
 
 ### [PLANTILLA — completar en próximas entradas]
 
