@@ -183,6 +183,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #23
 
+### [2026-11-08] Pantalla Historial (Módulo A)
+
+- **Problema abordado:** La ruta `/history` mostraba un placeholder. El plan pide una pantalla con los escaneos del repositorio (fecha, estado, duración y nota A–F) y cómo cambia el Risk Score entre un escaneo y otro.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md`, la guía de `frontend/README.md` y el patrón de las vistas de Dependencias y Dashboard.
+- **Código / Arquitectura generada:** `frontend/src/features/history/`: `dataSource.ts` (API o `mock.json`, como las demás vistas), `scans.ts` (cada escaneo completado se compara con el completado anterior, salteando fallidos y en curso) y `HistoryPage.tsx` con los cuatro estados (carga, error con reintento, sin repositorio y datos). Muestra el motivo de un escaneo fallido y los motores que no corrieron en uno parcial. Solo se tocó `App.tsx` para reemplazar el placeholder; los componentes y tipos compartidos no se modificaron.
+- **Validación y Corrección Humana:** Lint y build en verde. Revisada en el navegador a 1440 px, 1024 px y 375 px, sin errores en consola. En la primera versión la tabla desbordaba a 1024 px (la página tenía scroll horizontal), porque el menú lateral ocupa lugar desde `lg`: se pasó la tabla en columnas a `xl` y debajo cada escaneo se muestra como ficha. También se probó contra la API real de las PRs de endpoints y guardado, con un Postgres local: el historial llegó del más nuevo al más viejo, con un escaneo fallido por la cola caída y uno parcial. Pendiente para la versión final: el gráfico de evolución con los hallazgos nuevos y resueltos.
+- **Correcciones de la revisión antes del PR:** el `aria-label` sobre un `span` no se anuncia en lectores de pantalla: el guion de dato vacío ahora tiene texto oculto. El resumen dice «el escaneo más antiguo de la lista», porque el historial trae hasta 50, y contempla que el score no haya cambiado.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(history): pantalla Historial
 ### [2026-11-08] Endpoints REST y autenticación con Clerk
 
 - **Problema abordado:** El frontend tenía el cliente de la API listo pero no había endpoints: seguía con datos de ejemplo. Hacían falta los seis endpoints del plan y validar la sesión de Clerk en cada request, separando los datos por organización.
