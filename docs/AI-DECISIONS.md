@@ -316,6 +316,30 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
   - Limitaciones: no se desplegó el Worker ni se configuró un webhook real; KV es eventualmente consistente, por eso la API deduplica también.
 - **Responsable:** Valentino Chiappini
 - **PR:** feat(cloud): escaneo automático en cada push con un Worker de webhooks
+### [2026-11-08] Pantalla «Conectar repositorio» y tests del frontend (Módulo E)
+
+- **Problema abordado:** La ruta `/connect` era un placeholder. Hacía falta listar y buscar los repos de GitHub del usuario, conectar uno y lanzar su primer escaneo, y poder pegar la URL de un repo público. El frontend tampoco tenía ningún test.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` (hojas, botones primario y secundario, inputs, cuatro estados) y los componentes compartidos del Módulo B, con la skill `vercel-react-best-practices`.
+- **Código / Arquitectura generada:**
+  - `features/connect/`:
+    - `ConnectPage.tsx`: lista con búsqueda, «Cargar más», «Conectar y escanear» con `ScanProgress` y `useScanPolling`, y formulario de URL;
+    - `dataSource.ts`: API o mocks;
+    - `search.ts` y `types.ts`;
+    - `mock.json`.
+  - Vitest con jsdom y Testing Library (`vitest.config.ts`, `src/test/setup.ts`, `npm test`).
+  - `lib/api.ts` exporta `request`, y `App.tsx` publica la ruta.
+- **Validación y Corrección Humana:**
+  - 27 tests:
+    - búsqueda sin tildes ni mayúsculas;
+    - validación de la URL, igual a la del backend;
+    - paginación y conexión con escaneo;
+    - error 409 de GitHub no vinculado, error de la API y toast ante una conexión fallida.
+  - `eslint`, `tsc -b` y `vite build` sin errores; `npm audit --omit=dev` sin vulnerabilidades.
+  - Se corrigió durante el desarrollo: el texto de ayuda del campo de URL estaba dentro del `<label>` y pasaba a formar parte del nombre accesible del input; ahora está afuera y se asocia con `aria-describedby`.
+  - Decisión: la búsqueda filtra los repos ya cargados, porque la API de GitHub `/user/repos` no busca; si no hay resultados y quedan páginas, la pantalla lo avisa.
+  - Limitación: no se revisó en un navegador real, solo con Testing Library en jsdom.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(connect): pantalla Conectar repositorio
 
 ### [PLANTILLA — completar en próximas entradas]
 
