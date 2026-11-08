@@ -3,8 +3,16 @@ import { USE_MOCKS } from '@/lib/config'
 import type { Repository, Scan } from '@/types/Scan'
 import mock from './mock.json'
 
-/** La API también informa qué motores fallaron en un escaneo que terminó igual. */
-export type HistoryScan = Scan & { engine_errors?: Record<string, string> | null }
+/**
+ * Lo que /history agrega a un escaneo: qué motores fallaron en uno que terminó
+ * igual, y cuántos hallazgos aparecieron o dejaron de aparecer respecto del
+ * completado anterior (null si no hay con qué comparar).
+ */
+export type HistoryScan = Scan & {
+  engine_errors?: Record<string, string> | null
+  new_findings?: number | null
+  resolved_findings?: number | null
+}
 
 export interface HistoryData {
   repository: Repository
