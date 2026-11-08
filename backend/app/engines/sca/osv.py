@@ -5,6 +5,7 @@ Se usa `urllib` de la librería estándar para no sumar dependencias al scan-wor
 
 import json
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from urllib.error import URLError
 from urllib.parse import quote
 
@@ -12,6 +13,8 @@ from app.engines.sca.manifests import Dependency
 
 OSV_API = "https://api.osv.dev/v1"
 BATCH_SIZE = 1000   # máximo de consultas por pedido que acepta querybatch
+# Detalles de vulnerabilidades que se piden a OSV al mismo tiempo.
+MAX_PARALLEL_REQUESTS = 8
 
 
 class OsvError(Exception):
@@ -43,6 +46,13 @@ class OsvClient:
     def get_vuln(self, vuln_id: str) -> dict:
         """Detalle de una vulnerabilidad: alias (CVE), gravedad y versiones corregidas."""
         return self._request("GET", f"{OSV_API}/vulns/{quote(vuln_id)}")
+
+    def get_vulns(self, vuln_ids: list[str]) -> dict[str, dict]:
+        """Detalle de varias vulnerabilidades, pedidas en paralelo: id → detalle."""
+        if not vuln_ids:
+            return {}
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REQUESTS) as pool:
+            return dict(zip(vuln_ids, pool.map(self.get_vuln, vuln_ids), strict=True))
 
     def _request(self, method: str, url: str, body: dict | None = None) -> dict:
         data = json.dumps(body).encode() if body is not None else None
