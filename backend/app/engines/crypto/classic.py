@@ -123,6 +123,10 @@ def _scan_python(content: str, file_path: str) -> list[Finding]:
                     except RecursionError:
                         pass
             
+            # Modo ECB de cryptography: Cipher(algorithms.AES(k), modes.ECB())
+            elif func_name in ("cryptography.hazmat.primitives.ciphers.modes.ECB", "modes.ECB"):
+                findings.append(_create_finding("aes-ecb", "AES en modo ECB", Severity.MEDIUM, file_path, node.lineno, snippet, "El modo ECB filtra patrones del texto plano."))
+
             # TLS Inseguro
             elif func_name in ("requests.get", "requests.post", "requests.request", "requests.put"):
                 verify = _get_kwarg(node, "verify")

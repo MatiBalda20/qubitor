@@ -20,15 +20,22 @@ key = rsa.generate_private_key(65537, 1024)
     assert hallazgos[0].rule_id == "crypto.classic.rsa-weak-key"
     assert hallazgos[0].severity == Severity.HIGH
 
-def test_python_detecta_aes_modes_ecb(tmp_path):
+def test_python_detecta_modes_ecb_de_cryptography(tmp_path):
     codigo = """
-from Crypto.Cipher import AES
-from Crypto.Cipher import modes
-cipher = AES.new(b'clave', modes.ECB())
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+cipher = Cipher(algorithms.AES(clave), modes.ECB())
 """
     _escribir(tmp_path, "utils.py", codigo)
     hallazgos = scan_classic(str(tmp_path))
-    assert "crypto.classic.aes-ecb" in [h.rule_id for h in hallazgos]
+    assert [(h.rule_id, h.line) for h in hallazgos] == [("crypto.classic.aes-ecb", 3)]
+
+def test_python_no_marca_otros_modos_de_cryptography(tmp_path):
+    codigo = """
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+cipher = Cipher(algorithms.AES(clave), modes.GCM(iv))
+"""
+    _escribir(tmp_path, "utils.py", codigo)
+    assert scan_classic(str(tmp_path)) == []
 
 def test_deduplicacion_rsa_cryptoengine(tmp_path):
     codigo = """
