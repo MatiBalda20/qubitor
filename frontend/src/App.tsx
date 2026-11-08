@@ -1,0 +1,72 @@
+import { Compass } from 'lucide-react'
+import { Link, Route, Routes } from 'react-router-dom'
+import { EmptyState } from '@/components/EmptyState'
+import { AppLayout } from '@/components/layout/AppLayout'
+import { ModulePlaceholder } from '@/components/layout/ModulePlaceholder'
+import SignInPage from '@/features/auth/SignInPage'
+import SsoCallbackPage from '@/features/auth/SsoCallbackPage'
+import DashboardPage from '@/features/dashboard/DashboardPage'
+import { RequireAuth } from '@/lib/auth'
+
+/**
+ * Rutas de la app. Para sumar una vista, reemplazar su ModulePlaceholder por
+ * la página de features/<módulo>/ (PR revisado por el Módulo B).
+ */
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/sign-in/*" element={<SignInPage />} />
+      <Route path="/sso-callback" element={<SsoCallbackPage />} />
+
+      <Route
+        element={
+          <RequireAuth>
+            <AppLayout />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<DashboardPage />} />
+        <Route
+          path="code"
+          element={<ModulePlaceholder title="Código inseguro" owner="Módulo C" folder="features/code" />}
+        />
+        <Route
+          path="secrets"
+          element={<ModulePlaceholder title="Secretos" owner="Módulo C" folder="features/secrets" />}
+        />
+        <Route
+          path="pqc"
+          element={<ModulePlaceholder title="Preparación post-cuántica" owner="Módulo D" folder="features/pqc" />}
+        />
+        <Route
+          path="dependencies"
+          element={<ModulePlaceholder title="Dependencias" owner="Módulo D" folder="features/dependencies" />}
+        />
+        <Route
+          path="history"
+          element={<ModulePlaceholder title="Historial" owner="Módulo A" folder="features/history" />}
+        />
+        <Route
+          path="connect"
+          element={<ModulePlaceholder title="Conectar repositorio" owner="Módulo E" folder="features/connect" />}
+        />
+        <Route
+          path="*"
+          element={
+            <EmptyState
+              icon={Compass}
+              title="Esta página no existe"
+              description="Puede que el enlace esté roto o que la vista todavía no se haya publicado."
+              action={
+                <Link to="/" className="text-sm font-semibold text-civic underline decoration-civic/30 hover:decoration-civic">
+                  Ir al dashboard
+                </Link>
+              }
+              className="py-24"
+            />
+          }
+        />
+      </Route>
+    </Routes>
+  )
+}

@@ -5,7 +5,7 @@ import re
 from app.engines.base import Finding, Severity
 from app.engines.sca.manifests import Dependency
 
-RULE_ID = "sca.vulnerable-dependency"
+RULE_PREFIX = "sca.osv"
 MAX_DETAILS_CHARS = 600
 
 # Gravedad que calcula GitHub (`database_specific.severity`) → escala del equipo.
@@ -40,7 +40,8 @@ def vulnerability_to_finding(dep: Dependency, vuln: dict) -> Finding:
 
     return Finding(
         engine="sca",
-        rule_id=RULE_ID,
+        # Con el ID en la regla, cada falla de un paquete tiene su propio fingerprint.
+        rule_id=f"{RULE_PREFIX}.{vuln.get('id')}",
         title=title,
         # Sin gravedad de GitHub se asume media: hay una falla conocida, pero no
         # se sabe cuán grave es. Queda indicado en metadata["severity_source"].
