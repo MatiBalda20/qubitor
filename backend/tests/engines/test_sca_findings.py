@@ -1,6 +1,7 @@
 from app.engines.base import Severity
 from app.engines.sca.findings import fixed_version, vulnerability_to_finding
 from app.engines.sca.manifests import Dependency
+from app.orchestrator.normalize import deduplicate
 
 REQUESTS = Dependency("requests", "2.19.0", "PyPI", "requirements.txt", 3)
 LODASH = Dependency("lodash", "4.17.4", "npm", "package.json", 7)
@@ -34,7 +35,7 @@ def test_convierte_la_vulnerabilidad_en_un_hallazgo_completo():
     h = vulnerability_to_finding(REQUESTS, GHSA_REQUESTS)
 
     assert h.engine == "sca"
-    assert h.rule_id == "sca.vulnerable-dependency"
+    assert h.rule_id == "sca.osv.GHSA-x84v-xcm2-53pg"
     assert h.severity == Severity.HIGH
     assert h.cve == "CVE-2018-18074"
     assert h.cwe == "CWE-522"
@@ -46,6 +47,17 @@ def test_convierte_la_vulnerabilidad_en_un_hallazgo_completo():
     assert h.metadata["upgrade_command"] == "pip install requests==2.20.0"
     assert h.metadata["cvss_vector"].startswith("CVSS:3.1/")
     assert h.metadata["severity_source"] == "github"
+
+
+def test_varias_fallas_del_mismo_paquete_sobreviven_a_la_deduplicacion():
+    fallas = [
+        {"id": "GHSA-jf85-cpcp-j695", "aliases": ["CVE-2019-10744"], "database_specific": {"severity": "CRITICAL"}},
+        {"id": "GHSA-p6mc-m468-83gw", "aliases": ["CVE-2020-8203"], "database_specific": {"severity": "HIGH"}},
+    ]
+
+    hallazgos = [vulnerability_to_finding(LODASH, falla) for falla in fallas]
+
+    assert [h.cve for h in deduplicate(hallazgos).values()] == ["CVE-2019-10744", "CVE-2020-8203"]
 
 
 def test_npm_arma_el_comando_y_el_snippet_de_npm():
