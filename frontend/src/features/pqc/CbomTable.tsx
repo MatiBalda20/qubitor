@@ -5,7 +5,14 @@ import { pluralize } from '@/lib/format'
 import { THREAT_LABEL, type CryptoUsage } from './quantum'
 
 /** Inventario criptográfico (CBOM): todo uso de criptografía, también el seguro. */
-export function CbomTable({ usages }: { usages: readonly CryptoUsage[] }) {
+export function CbomTable({
+  usages,
+  atRisk = new Set(),
+}: {
+  usages: readonly CryptoUsage[]
+  /** Ids de los hallazgos que ya están en riesgo según la desigualdad de Mosca. */
+  atRisk?: ReadonlySet<string>
+}) {
   const algorithms = new Set(usages.map((u) => u.algorithm)).size
 
   return (
@@ -45,7 +52,14 @@ export function CbomTable({ usages }: { usages: readonly CryptoUsage[] }) {
                   </span>
                   {!usage.active && <StatusStamp status={usage.finding.status} className="ml-2 align-middle" />}
                 </th>
-                <td className="px-3 py-2.5 text-ink-2">{THREAT_LABEL[usage.threat]}</td>
+                <td className="px-3 py-2.5 text-ink-2">
+                  {THREAT_LABEL[usage.threat]}
+                  {atRisk.has(usage.finding.id) && (
+                    <span className="ml-2 rounded-xs bg-sev-high-soft px-1.5 py-0.5 text-xs font-semibold text-sev-high-ink ring-1 ring-sev-high/45 ring-inset">
+                      En riesgo hoy
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2.5 font-mono text-[0.8125rem] text-ink-2">{usage.location}</td>
                 <td className="py-2 pr-5 text-right">
                   <SeverityBadge severity={usage.finding.severity} size="sm" className={cn(!usage.active && 'opacity-55')} />
