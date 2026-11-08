@@ -10,12 +10,20 @@ from app.storage.cyclonedx import build_cyclonedx, quantum_threat
 URL = "https://github.com/org/repo"
 
 
-def _hallazgo(rule_id, severity, file_path, line, algorithm=None, engine="crypto", title="Título"):
+def _hallazgo(rule_id, severity, file_path, line, algorithm=None, engine="crypto", title="Título", **extra):
+    metadata = {"algorithm": algorithm} if algorithm else {}
     return Finding(
         engine=engine, rule_id=rule_id, title=title, severity=severity, file_path=file_path,
-        line=line, snippet="...", description="...",
-        metadata={"algorithm": algorithm} if algorithm else {},
+        line=line, snippet="...", description="...", metadata={**metadata, **extra},
     )
+
+
+CERT = {"kind": "certificate", "subject": "CN=demo.qubitor.invalid", "not_after": "2036-11-05T21:16:51+00:00",
+        "signature_hash": "sha1", "key_size": 1024}
+
+
+def _cert(rule_id, severity, line=1, **extra):
+    return _hallazgo(rule_id, severity, "certs/server.pem", line, "RSA", **{**CERT, **extra})
 
 
 def _cbom(*hallazgos):
@@ -137,12 +145,68 @@ def test_hallazgo_sin_linea_no_lleva_linea():
     assert _componente(cbom, "SHA-256")["evidence"]["occurrences"][0].keys() == {"location", "additionalContext"}
 
 
+def test_certificado_es_un_componente_con_sujeto_vencimiento_y_problemas():
+    cbom = _cbom(
+        _cert("crypto.pqc.cert-weak-key", Severity.HIGH),
+        _cert("crypto.pqc.cert-weak-signature", Severity.HIGH),
+    )
+
+    certificado = next(c for c in cbom["components"] if c["cryptoProperties"]["assetType"] == "certificate")
+    assert certificado["name"] == "CN=demo.qubitor.invalid"
+    assert certificado["cryptoProperties"]["certificateProperties"] == {
+        "certificateFormat": "X.509",
+        "subjectName": "CN=demo.qubitor.invalid",
+        "notValidAfter": "2036-11-05T21:16:51+00:00",
+    }
+    assert certificado["evidence"]["occurrences"] == [{"location": "certs/server.pem", "line": 1}]
+    assert _propiedad(certificado, "qubitor:rule_id") == ["crypto.pqc.cert-weak-key", "crypto.pqc.cert-weak-signature"]
+    assert _propiedad(certificado, "qubitor:quantum-threat") == ["broken"]
+    assert _propiedad(certificado, "qubitor:signature-hash") == ["sha1"]
+
+
+def test_la_clave_del_certificado_entra_como_algoritmo_junto_con_el_codigo():
+    cbom = _cbom(
+        _hallazgo("crypto.pqc.rsa-keygen", Severity.MEDIUM, "app/keys.py", 10, "RSA"),
+        _cert("crypto.pqc.cert-weak-key", Severity.HIGH),
+        _cert("crypto.pqc.cert-weak-signature", Severity.HIGH),
+    )
+
+    rsa = _componente(cbom, "RSA")
+    assert [o["location"] for o in rsa["evidence"]["occurrences"]] == ["app/keys.py", "certs/server.pem"]
+    assert _propiedad(rsa, "qubitor:severity") == ["high"]
+    # La firma SHA-1 es del certificado, no de la clave RSA.
+    assert "crypto.pqc.cert-weak-signature" not in _propiedad(rsa, "qubitor:rule_id")
+
+
+def test_clave_suelta_entra_solo_como_algoritmo():
+    cbom = _cbom(_hallazgo("crypto.pqc.cert-quantum-vulnerable", Severity.MEDIUM, "firma.key", 1,
+                           "Ed25519", kind="private_key"))
+
+    assert [c["cryptoProperties"]["assetType"] for c in cbom["components"]] == ["algorithm"]
+    assert _componente(cbom, "Ed25519")["cryptoProperties"]["algorithmProperties"]["nistQuantumSecurityLevel"] == 0
+
+
+def test_dos_certificados_en_el_mismo_archivo_son_dos_componentes():
+    cbom = _cbom(
+        _cert("crypto.pqc.cert-quantum-vulnerable", Severity.MEDIUM, line=1, subject="CN=hoja.invalid"),
+        _cert("crypto.pqc.cert-expired", Severity.MEDIUM, line=30, subject="CN=raiz.invalid"),
+    )
+
+    nombres = [c["name"] for c in cbom["components"] if c["cryptoProperties"]["assetType"] == "certificate"]
+    assert nombres == ["CN=hoja.invalid", "CN=raiz.invalid"]
+
+
 @pytest.mark.parametrize("rule_id, amenaza", [
     ("crypto.pqc.eddsa", "shor"),
     ("crypto.classic.rsa-weak-key", "shor"),
     ("crypto.pqc.aes-128", "grover"),
     ("crypto.classic.insecure-random", "broken"),
     ("crypto.pqc.inventory.password-hash", "none"),
+    ("crypto.pqc.cert-quantum-vulnerable", "shor"),
+    ("crypto.pqc.cert-weak-key", "shor"),
+    ("crypto.pqc.cert-weak-signature", "broken"),
+    ("crypto.pqc.cert-expired", "broken"),
+    ("crypto.pqc.cert-expiring", "none"),
 ])
 def test_amenaza_cuantica_por_regla(rule_id, amenaza):
     assert quantum_threat(rule_id) == amenaza
@@ -180,8 +244,13 @@ def test_cumple_el_esquema_oficial_de_cyclonedx_1_6(validador):
         ("crypto.classic.rsa-weak-key", None), ("crypto.classic.insecure-random", None),
         ("crypto.classic.tls-insecure", None), ("crypto.pqc.regla-nueva", None),
     ]
-    cbom = _cbom(*(_hallazgo(r, Severity.MEDIUM, "a.py", i + 1, a) for i, (r, a) in enumerate(reglas)))
+    certificados = [
+        _cert(rule, Severity.HIGH, line=100)
+        for rule in ("crypto.pqc.cert-weak-key", "crypto.pqc.cert-weak-signature", "crypto.pqc.cert-expired")
+    ] + [_hallazgo("crypto.pqc.cert-quantum-vulnerable", Severity.MEDIUM, "firma.key", 1, "Ed25519", kind="private_key")]
+    cbom = _cbom(*(_hallazgo(r, Severity.MEDIUM, "a.py", i + 1, a) for i, (r, a) in enumerate(reglas)), *certificados)
 
+    assert any(c["cryptoProperties"]["assetType"] == "certificate" for c in cbom["components"])
     assert list(validador.iter_errors(cbom)) == []
 
 

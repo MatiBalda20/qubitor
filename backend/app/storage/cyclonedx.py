@@ -49,7 +49,16 @@ _RULE_PROFILES: dict[str, _Profile] = {
     "crypto.classic.aes-ecb": _Profile("block-cipher", ("encrypt", "decrypt"), mode="ecb"),
     "crypto.classic.rsa-weak-key": _Profile("pke", ("keygen",)),
     "crypto.classic.insecure-random": _Profile("other", ("generate",)),
+    # Claves de certificados y archivos de claves (certs.py): un certificado sirve para firmar.
+    "crypto.pqc.cert-quantum-vulnerable": _Profile("signature", ("sign", "verify")),
+    "crypto.pqc.cert-weak-key": _Profile("signature", ("sign", "verify")),
 }
+
+# Reglas de certs.py que hablan de la clave: entran como algoritmo, igual que en el código.
+_CERT_KEY_RULES = {"crypto.pqc.cert-quantum-vulnerable", "crypto.pqc.cert-weak-key"}
+# Problemas que existen hoy, sin computadora cuántica.
+_BROKEN_RULES = {"crypto.pqc.cert-weak-signature", "crypto.pqc.cert-expired"}
+_THREAT_ORDER = ["broken", "shor", "grover", "none"]
 _UNKNOWN = _Profile("unknown", ("unknown",))
 
 # Nombre del algoritmo para las reglas de classic.py, que no lo traen en `metadata`.
@@ -66,6 +75,7 @@ _CLASSIC_ALGORITHMS = {
 _SHOR_RULES = {
     "crypto.pqc.rsa-keygen", "crypto.pqc.ec-keygen", "crypto.pqc.ecdsa", "crypto.pqc.eddsa",
     "crypto.pqc.ecdh", "crypto.pqc.dh", "crypto.pqc.dsa-keygen", "crypto.classic.rsa-weak-key",
+    "crypto.pqc.cert-quantum-vulnerable", "crypto.pqc.cert-weak-key",
 }
 
 # (seguridad clásica en bits, categoría de seguridad cuántica de NIST de 1 a 5).
@@ -86,14 +96,21 @@ _SECURITY_LEVELS: dict[str, tuple[int, int]] = {
 
 
 def build_cyclonedx(scan_id: str, repo_url: str, commit_sha: str, findings: dict[str, Finding]) -> dict:
-    """CBOM del escaneo: un componente por algoritmo, con cada lugar donde aparece."""
+    """CBOM del escaneo: un componente por algoritmo, con cada lugar donde aparece,
+    y uno por cada certificado versionado en el repo."""
     by_ref: dict[str, list[tuple[str, Finding]]] = {}
+    certificates: dict[str, list[tuple[str, Finding]]] = {}
     for fp, finding in findings.items():
         if finding.engine != "crypto":
             continue
-        by_ref.setdefault(_bom_ref(finding), []).append((fp, finding))
+        is_cert_rule = finding.rule_id.startswith("crypto.pqc.cert-")
+        if not is_cert_rule or finding.rule_id in _CERT_KEY_RULES:
+            by_ref.setdefault(_bom_ref(finding), []).append((fp, finding))
+        if is_cert_rule and finding.metadata.get("kind") == "certificate":
+            certificates.setdefault(_certificate_ref(finding), []).append((fp, finding))
 
     components = [_component(ref, usages) for ref, usages in sorted(by_ref.items())]
+    components += [_certificate_component(ref, usages) for ref, usages in sorted(certificates.items())]
     return {
         "bomFormat": "CycloneDX",
         "specVersion": SPEC_VERSION,
@@ -129,6 +146,8 @@ def quantum_threat(rule_id: str) -> str:
     """shor: lo rompe · grover: le baja la seguridad · broken: ya está roto hoy · none."""
     if rule_id in _SHOR_RULES:
         return "shor"
+    if rule_id in _BROKEN_RULES:
+        return "broken"
     if rule_id == "crypto.pqc.aes-128":
         return "grover"
     if rule_id.startswith("crypto.classic."):
@@ -158,6 +177,42 @@ def _component(ref: str, usages: list[tuple[str, Finding]]) -> dict:
             *({"name": "qubitor:rule_id", "value": rule} for rule in sorted({f.rule_id for _, f in usages})),
         ],
     }
+
+
+def _certificate_component(ref: str, usages: list[tuple[str, Finding]]) -> dict:
+    """Certificado X.509 versionado en el repo: sujeto, vencimiento y sus problemas."""
+    first = usages[0][1]
+    metadata = first.metadata
+    worst = min((finding.severity for _, finding in usages), key=_SEVERITY_ORDER.index)
+    threat = min((quantum_threat(finding.rule_id) for _, finding in usages), key=_THREAT_ORDER.index)
+    certificate: dict = {"certificateFormat": "X.509"}
+    if metadata.get("subject"):
+        certificate["subjectName"] = metadata["subject"]
+    if metadata.get("not_after"):
+        certificate["notValidAfter"] = metadata["not_after"]
+    properties = [
+        {"name": "qubitor:severity", "value": worst.value},
+        {"name": "qubitor:quantum-threat", "value": threat},
+        {"name": "qubitor:key-algorithm", "value": algorithm_name(first)},
+        *({"name": "qubitor:rule_id", "value": rule} for rule in sorted({f.rule_id for _, f in usages})),
+    ]
+    if metadata.get("signature_hash"):
+        properties.append({"name": "qubitor:signature-hash", "value": metadata["signature_hash"]})
+    return {
+        "type": "cryptographic-asset",
+        "bom-ref": ref,
+        "name": metadata.get("subject") or f"Certificado en {first.file_path}",
+        "cryptoProperties": {"assetType": "certificate", "certificateProperties": certificate},
+        "evidence": {"occurrences": [
+            {"location": first.file_path, **({"line": first.line} if first.line else {})},
+        ]},
+        "properties": properties,
+    }
+
+
+def _certificate_ref(finding: Finding) -> str:
+    place = f"{finding.file_path}-{finding.line or 0}".lower()
+    return "crypto/certificate/" + re.sub(r"[^a-z0-9]+", "-", place).strip("-")
 
 
 def _crypto_properties(finding: Finding, name: str) -> dict:
