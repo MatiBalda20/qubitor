@@ -17,9 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Creamos un usuario no privilegiado (qubitor) y el grupo
 RUN groupadd -r qubitor_group && useradd -r -g qubitor_group qubitor
 
-# Preparamos los directorios necesarios y asignamos permisos al usuario no root
+# Solo el directorio de los clones es del usuario no root: el código de la app
+# queda de root, así un repo malicioso no puede modificarlo
 RUN mkdir -p /app ${REPOS_DIR} \
-    && chown -R qubitor:qubitor_group /app ${REPOS_DIR}
+    && chown -R qubitor:qubitor_group ${REPOS_DIR}
 
 # Cambiamos al directorio de trabajo de la app
 WORKDIR /app
@@ -28,8 +29,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiamos el código del backend (incluyendo el app/ y worker/)
-COPY --chown=qubitor:qubitor_group . /app/
+# Copiamos el código del backend
+COPY . /app/
 
 # Cambiamos al usuario no privilegiado
 USER qubitor

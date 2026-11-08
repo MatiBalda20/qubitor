@@ -91,7 +91,7 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Código / Arquitectura generada:** `frontend/` con React 19 + Vite + TypeScript + Tailwind 4. `types/Finding.ts` copia `Severity` y `Finding` de `base.py` y agrega lo que suma la API (`id`, `status`, `fingerprint`, `triage`). `lib/api.ts` centraliza la URL, el JWT de Clerk y los errores de FastAPI. `lib/risk.ts` implementa los pesos y la fórmula del Risk Score de la sección 5. Componentes comunes: `SeverityBadge`, `FindingCard`, `FindingsTable` (filtros por estado, severidad, motor y texto), `CodeSnippet`, `EmptyState`, `Loader`/`Skeleton`, `ScanProgress` con `useScanPolling`, `StatusStamp`, `FindingStatusActions` y toasts con "Deshacer". El dashboard usa `mock.json` con las fallas plantadas del repo de demo y una fuente de datos que simula un escaneo completo cuando no hay API.
 - **Validación y Corrección Humana:** Verifiqué que los tipos coincidan campo por campo con `base.py` y que el Risk Score de los mocks dé lo esperado a mano (penalización 66,5 → 33,5, nota F; al resolver dos críticos pasa a 53,5, nota D). `tsc -b`, `npm run lint` y `npm run build` sin errores. Revisé capturas en 1440 px y 390 px: se corrigió un desborde horizontal en mobile (la tabla por motor ensanchaba la grilla) y el orden de las filas de hallazgos en mobile. Se dividió el bundle en chunks (React, Clerk, GSAP) porque superaba los 500 kB. Decisiones y límites aceptados: sin `VITE_CLERK_PUBLISHABLE_KEY` la app corre en modo demo sin login; el Risk Score se recalcula en el cliente para que la nota cambie al instante, con la misma fórmula que usará el orquestador; los tipos de `Scan`, `Repository` y los campos extra de `Finding` son provisorios hasta que el Módulo A publique sus modelos; el dashboard muestra el primer repositorio conectado (todavía no hay selector). Quedan para otro PR el deploy en Cloudflare Pages, `render.yaml`, `wrangler.toml` y la CI.
 - **Responsable:** Matías Balda
-- **PR:** _pendiente_
+- **PR:** #14
 
 ### [2026-11-06] Motor de Secretos (secrets/engine.py)
 
@@ -120,6 +120,41 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** _pendiente_
 
+### [2026-11-06] Reglas de Criptografía Clásica y CryptoEngine
+
+- **Problema abordado:** Detectar algoritmos obsoletos (MD5, DES, RC4), AES-ECB, RSA débil y random inseguro. Evitar duplicación de reportes de RSA con la detección post-cuántica (PQC).
+- **Prompt / Herramienta utilizada:** Claude Opus, refactorización a partir de un PR Review. Se integraron utilidades del módulo PQC (`_MaskStrings`, `_collect_imports`) para parseo y seguridad del código.
+- **Código / Arquitectura generada:** `scan_classic` utiliza el módulo `ast` para Python y resolver alias de importación (detectando librerías `cryptography`, `Crypto`, `hashlib`), capturando excepciones de recursividad de AST. En JS emplea regex con enmascaramiento temporal de literales. En `crypto/__init__.py` se orquestaron ambos módulos, aplicando una deduplicación manual que prioriza el hallazgo "HIGH" clásico por sobre el "MEDIUM" cuántico cuando coinciden en la misma línea.
+- **Validación y Corrección Humana:** Se validó que los literales de clave en `AES.new` ya no se filtren gracias a la reutilización de `_MaskStrings`. Se acotó el falso positivo de `random.choice` limitando su evaluación exclusivamente a cuando el resultado se asigna a variables de seguridad (password, token, secret).
+- **Responsable:** Alvaro Marini / Valentina Pértile de la Vega (Review)
+- **PR:** #16
+
+### [2026-11-06] Modelos de Base de Datos y Conexión a Supabase
+
+- **Problema abordado:** Diseñar el esquema relacional en SQLAlchemy respetando el modelo de datos (organizaciones, usuarios, repositorios, escaneos, hallazgos) y configurar la conexión para soportar el pooler transaccional de Supabase (PgBouncer).
+- **Prompt / Herramienta utilizada:** Claude Opus, refinado mediante revisión cruzada en GitHub (PR Review) para ajustar compatibilidad con psycopg3 y formateo de Enums.
+- **Código / Arquitectura generada:** `database.py` implementa `create_engine` con `pool_pre_ping=True` y `prepare_threshold=None` para evitar fallos de prepared statements en el puerto 6543 de Supabase. `models.py` define las tablas con cascadas, índices compuestos y tipos JSONB, almacenando los Enums por su valor en minúscula (`values_callable`).
+- **Validación y Corrección Humana:** Se detectó en la revisión de código que los Enums de Python se guardaban en mayúscula (ej. `HIGH`), rompiendo el contrato que usa minúsculas (`high`); se corrigió con lambdas en SQLAlchemy. Además, se configuró explícitamente el `prepare_threshold` tras validar las limitaciones del pooler transaccional.
+- **Responsable:** Alvaro Marini / Juan Ignacio Wilt (Review)
+- **PR:** #18
+
+### [2026-11-06] Dockerfile para Scan-Worker aislado
+
+- **Problema abordado:** Crear un entorno de ejecución seguro y aislado para los motores de análisis, asegurando que se ejecuten sin privilegios de root, tengan Git instalado para clonar repositorios y no expongan el contenedor a fallos de seguridad por código de terceros.
+- **Prompt / Herramienta utilizada:** Claude Opus, revisión humana (PR Review cruzado) para ajustes de contexto de build, variables de entorno de Redis y exclusión de archivos temporales.
+- **Código / Arquitectura generada:** `backend/worker/Dockerfile` basado en `python:3.11-slim`. Se crea el usuario no privilegiado `qubitor`, se instala `git` y se define `/tmp/scans`. Se añadió un `backend/.dockerignore` para evitar que `.env` y `.venv` se filtren en la imagen. La conexión a la cola usa la variable `$REDIS_URL` inyectada dinámicamente en Render.
+- **Validación y Corrección Humana:** Se corrigió el contexto de build en las instrucciones para construir correctamente la imagen. Se modificó el `CMD` fijo de localhost para que lea variables de entorno (`$REDIS_URL`), y se agregó el `.dockerignore` que faltaba para proteger secretos locales e ignorar carpetas pesadas.
+- **Responsable:** Alvaro Marini / Juan Ignacio Wilt (Review)
+- **PR:** #17
+
+### [2026-11-06] Estados de escaneo y hallazgos info en el frontend (Módulo B)
+
+- **Problema abordado:** Los estados de escaneo del frontend (`pending`/`done`) no coincidían con el enum `ScanStatus` de la API (`queued`, `running`, `completed`, `failed`): el dashboard no encontraba ningún escaneo terminado y el polling nunca se detenía. Además, los hallazgos `info` (inventario o buenas prácticas sin riesgo, como el CBOM) contaban como abiertos en «Penalizan X de Y» y ofrecían «Marcar resuelto» y «Falso positivo», aunque no son fallas reales.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5). Le pedí alinear todo el flujo de estado de escaneo con el enum oficial, mantener el polling solo mientras el estado sea `queued` o `running` y cortarlo en `completed` (resultados) o `failed` (error); que los `info` no penalicen ni muestren acciones de estado; sin modificar estilos y con commits separados según la convención del proyecto.
+- **Código / Arquitectura generada:** `types/Scan.ts` con `ScanStatus = 'queued' | 'running' | 'completed' | 'failed'`, y los usos actualizados en `ScanProgress.tsx`, `dataSource.ts` (el último escaneo se busca con `completed`) y `mock.json`. `useScanPolling.ts` sigue consultando solo con los estados activos (`queued`, `running`) y se detiene ante cualquier otro, para no quedar consultando si llega un estado desconocido. `DashboardPage.tsx` trata por separado `completed`, `failed` y un estado inesperado. `lib/risk.ts` agrega `isInformational` (usa la severidad ajustada por la IA) y lo excluye de `countsTowardScore`. `stats.ts` deja los `info` fuera de «Penalizan» y de los «abiertos» por vista, pero los sigue mostrando en la fila «inventario» del desglose y en la matriz por motor. `FindingStatusActions` y `FindingsTable` no muestran acciones para los `info`. En un segundo paso, el campo `status` se mantiene en el dato (el modelo es del Módulo A y una columna nullable no aportaba nada), pero la UI lo ignora para los `info`: `FindingsTable` y `FindingCard` no muestran su sello de estado ni los tachan, y en la tabla solo aparecen en la pestaña «Todos», no en «Abiertos», «Resueltos» ni «Falsos positivos».
+- **Validación y Corrección Humana:** `tsc -b` y `eslint` sin errores. Se buscaron con grep los literales `pending` y `done` de escaneo que quedaban en `src/`. Se confirmó que el peso de `info` ya era 0 en `lib/risk.ts` y en `backend/app/orchestrator/risk.py`, así que el puntaje no cambia; el cambio corrige el conteo y las acciones de la UI. Decisión: no ocultar los `info` del inventario, solo sacarlos de lo que penaliza. Se descartó mostrar una etiqueta o pestaña «Inventario» en la tabla. Limitaciones aceptadas: el primer commit no compila solo (el hook todavía usaba `done`), sí junto con el segundo. Pendiente: probar el polling en el navegador contra la API real.
+- **Responsable:** Matías Balda
+- **PR:** #21
 ### [2026-11-06] API base, cola de escaneos y scan-worker
 
 - **Problema abordado:** Separar la API del escaneo: la API publica un trabajo y responde al instante, y un scan-worker independiente lo ejecuta, con reintentos y cola de errores (componente cloud del Módulo A). Además, dejar la imagen Docker del scan-worker en condiciones de conectarse a Upstash.
