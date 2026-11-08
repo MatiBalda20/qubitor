@@ -77,6 +77,8 @@ class Scan(Base):
     grade = Column(String(1), nullable=True)
     engine_errors = Column(JSONB, nullable=True)
     error = Column(Text, nullable=True)
+    # Módulo E: resumen ejecutivo generado al final del escaneo (Gemini o heurístico).
+    ai_summary = Column(JSONB, nullable=True)
 
     repository = relationship("Repository", back_populates="scans")
     findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")
