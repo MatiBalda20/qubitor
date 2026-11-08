@@ -7,6 +7,8 @@ import SignInPage from '@/features/auth/SignInPage'
 import SsoCallbackPage from '@/features/auth/SsoCallbackPage'
 import DashboardPage from '@/features/dashboard/DashboardPage'
 import DependenciesPage from '@/features/dependencies/DependenciesPage'
+import HistoryPage from '@/features/history/HistoryPage'
+import PqcPage from '@/features/pqc/PqcPage'
 import { RequireAuth } from '@/lib/auth'
 
 /**
@@ -35,15 +37,9 @@ export default function App() {
           path="secrets"
           element={<ModulePlaceholder title="Secretos" owner="Módulo C" folder="features/secrets" />}
         />
-        <Route
-          path="pqc"
-          element={<ModulePlaceholder title="Preparación post-cuántica" owner="Módulo D" folder="features/pqc" />}
-        />
+        <Route path="pqc" element={<PqcPage />} />
         <Route path="dependencies" element={<DependenciesPage />} />
-        <Route
-          path="history"
-          element={<ModulePlaceholder title="Historial" owner="Módulo A" folder="features/history" />}
-        />
+        <Route path="history" element={<HistoryPage />} />
         <Route
           path="connect"
           element={<ModulePlaceholder title="Conectar repositorio" owner="Módulo E" folder="features/connect" />}

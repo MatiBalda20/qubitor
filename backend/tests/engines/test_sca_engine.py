@@ -23,6 +23,9 @@ class OsvFalso:
         self.detalles_pedidos.append(vuln_id)
         return self.detalles[vuln_id]
 
+    def get_vulns(self, vuln_ids):
+        return {vuln_id: self.get_vuln(vuln_id) for vuln_id in vuln_ids}
+
 
 GHSA = {"id": "GHSA-x84v-xcm2-53pg", "aliases": ["CVE-2018-18074", "PYSEC-2018-28"],
         "database_specific": {"severity": "HIGH"}}
