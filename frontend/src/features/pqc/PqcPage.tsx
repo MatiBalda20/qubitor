@@ -12,6 +12,7 @@ import { ExposureCard } from './ExposureCard'
 import { MigrationRoadmap } from './MigrationRoadmap'
 import { MoscaCard } from './MoscaCard'
 import { atRiskIds, defaultMoscaParams, moscaAssessment, type MoscaParams } from './mosca'
+import { ReportDownloadButton } from './ReportDownloadButton'
 import { cryptoUsages, exposure, migrationRoadmap } from './quantum'
 
 type LoadState =
@@ -115,6 +116,7 @@ function PqcView({ data }: { data: PqcData }) {
             )}
           </span>
         }
+        actions={scan && <ReportDownloadButton scanId={scan.id} kind="cbom" label="Descargar CBOM (CycloneDX)" />}
       />
 
       <div className="space-y-5 px-4 pb-12 sm:px-8">
