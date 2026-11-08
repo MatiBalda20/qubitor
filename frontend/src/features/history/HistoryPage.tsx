@@ -132,9 +132,19 @@ function HistoryView({ data }: { data: HistoryData }) {
           <>
             {trend && (
               <p className="max-w-[75ch] text-sm text-ink-2">
-                El Risk Score pasó de <strong className="font-semibold text-ink tabular">{formatNumber(trend.first)}</strong> en
-                el primer escaneo a <strong className="font-semibold text-ink tabular">{formatNumber(trend.latest)}</strong> en
-                el último. Cada escaneo completado se compara con el anterior.
+                {trend.first === trend.latest ? (
+                  <>
+                    El Risk Score se mantiene en <strong className="font-semibold text-ink tabular">{formatNumber(trend.latest)}</strong>{' '}
+                    desde el escaneo más antiguo de la lista.
+                  </>
+                ) : (
+                  <>
+                    El Risk Score pasó de <strong className="font-semibold text-ink tabular">{formatNumber(trend.first)}</strong> en
+                    el escaneo más antiguo de la lista a{' '}
+                    <strong className="font-semibold text-ink tabular">{formatNumber(trend.latest)}</strong> en el último.
+                  </>
+                )}{' '}
+                Cada escaneo completado se compara con el anterior.
               </p>
             )}
             <ScanTable rows={rows} />
@@ -190,9 +200,7 @@ function ScanRow({ row }: { row: HistoryRow }) {
         </Cell>
         <Cell label="Nota">
           {scan.grade ? (
-            <span className={cn('font-display text-xl leading-none font-semibold', GRADE_TEXT[scan.grade])} aria-label={`Nota ${scan.grade}`}>
-              {scan.grade}
-            </span>
+            <span className={cn('font-display text-xl leading-none font-semibold', GRADE_TEXT[scan.grade])}>{scan.grade}</span>
           ) : (
             <Empty />
           )}
@@ -273,8 +281,9 @@ function ScoreDelta({ delta }: { delta: number | null }) {
 
 function Empty() {
   return (
-    <span className="text-ink-3" aria-label="Sin dato">
-      —
+    <span className="text-ink-3">
+      <span aria-hidden="true">—</span>
+      <span className="sr-only">Sin dato</span>
     </span>
   )
 }
