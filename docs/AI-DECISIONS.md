@@ -183,6 +183,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #23
 
+### [2026-11-07] Vista «Preparación post-cuántica» (frontend/src/features/pqc)
+
+- **Problema abordado:** Mostrar qué criptografía usa el repositorio (CBOM), qué parte rompería una computadora cuántica y en qué orden migrar a ML-KEM (FIPS 203) y ML-DSA (FIPS 204). Los hallazgos de `pqc.py` y de `classic.py` llegan sueltos: hay que clasificarlos por amenaza y agruparlos en pasos de migración.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` y los componentes compartidos del Módulo B.
+- **Código / Arquitectura generada:** `quantum.ts` clasifica cada hallazgo de criptografía en Shor, Grover, rota hoy o sin riesgo conocido (descarta falsos positivos; resueltos y descartados no cuentan, el inventario siempre cuenta), calcula el porcentaje vulnerable a Shor y arma la hoja de ruta: RSA < 2048, intercambio de claves a ML-KEM (primero, por «cosechar ahora, descifrar después»), claves RSA/EC de uso indefinido, firmas a ML-DSA y AES-128 a AES-256. `ExposureCard.tsx`, `MigrationRoadmap.tsx` y `CbomTable.tsx` muestran cada parte; `PqcPage.tsx` cubre carga, error, vacío y datos. `mock.json` sale de la salida real de CryptoEngine sobre el repo de demo. En `App.tsx` se reemplazó el placeholder por la vista. Se sumó `tests/engines/test_repo_demo.py`, que clona el repo de demo y verifica los hallazgos post-cuánticos y de dependencias (con `QUBITOR_TESTS_RED=1`).
+- **Validación y Corrección Humana:** Leí el código de `quantum.ts` y de los componentes. Corrí `pytest` en mi máquina (pasa, también el test del repo de demo con internet) y revisé la vista en el navegador: la exposición a Shor, la hoja de ruta y el inventario se ven bien con los datos del demo. Además, `tsc -b`, `eslint` y `vite build` dan sin errores, y con un script se comprobó la clasificación con los datos del demo (60 % vulnerable a Shor) y que un hallazgo resuelto deja de contar y un falso positivo desaparece. Limitación: la vista usa datos de ejemplo hasta que la API tenga los endpoints de escaneos.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #24
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
