@@ -156,6 +156,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Matías Balda
 - **PR:** #21
 
+### [2026-11-07] Vista «Dependencias» (frontend/src/features/dependencies)
+
+- **Problema abordado:** Mostrar los hallazgos del motor SCA de forma accionable: qué paquetes tienen vulnerabilidades conocidas, a qué versión actualizar y con qué comando. Un paquete suele tener varias fallas corregidas en versiones distintas (lodash 4.17.4 tiene 9), así que listar cada CVE con su propio comando no resuelve el problema.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` y los componentes compartidos del Módulo B.
+- **Código / Arquitectura generada:** `packages.ts` agrupa los hallazgos por paquete y manifiesto, calcula la versión que corrige todas las fallas pendientes (descarta resueltas y falsos positivos), la peor severidad, el CVSS máximo y el comando `pip install` / `npm install`. `PackageTable.tsx` muestra cada paquete en un acordeón con sus CVE (enlace a NVD u OSV), CVSS y versión corregida, y botones para copiar el comando. `DependenciesPage.tsx` cubre carga, error, vacío y datos, y ofrece copiar todos los comandos juntos. `mock.json` sale de la salida real del motor sobre el repo de demo. En `App.tsx` se reemplazó el placeholder por la vista.
+- **Validación y Corrección Humana:** `tsc -b`, `eslint` y `vite build` sin errores. Con un script se comprobó la agrupación con los datos del demo (lodash → 4.18.0, requests → 2.33.0) y casos borde: fallas resueltas, falsos positivos, fallas sin versión corregida y comparación de versiones. Revisé la vista en el navegador: el acordeón, los enlaces a los CVE y el botón de copiar funcionan; se corrigió la letra del rótulo «instalada» en pantallas angostas. Limitación: la vista usa datos de ejemplo hasta que la API tenga los endpoints de escaneos.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** _pendiente_
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
