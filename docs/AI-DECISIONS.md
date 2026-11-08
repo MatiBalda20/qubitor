@@ -201,6 +201,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #31
 
+### [2026-11-08] Reporte del escaneo en PDF (backend/app/storage/pdf.py)
+
+- **Problema abordado:** El plan pide guardar el reporte de cada escaneo en JSON y en PDF. El JSON sirve para herramientas; el PDF, para leerlo o compartirlo con alguien que no usa Qubitor.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** `pdf.py` arma el PDF con `reportlab` (licencia BSD), que se importa recién al generarlo para no ocupar memoria en el worker cuando no hace falta. Incluye repositorio, commit, fecha, Risk Score y nota, resumen por gravedad, motores con errores, los hallazgos de crítica a baja (hasta 300, con motor, CVE o CWE y archivo y línea) y el inventario criptográfico como lista de algoritmos. El texto se escapa para el formato de `reportlab` y lo que las fuentes estándar no pueden dibujar se reemplaza. `reports.py` lo guarda en R2 como `reports/<scan_id>/report.pdf`; si falla solo el PDF, el reporte JSON y el CBOM quedan guardados igual.
+- **Validación y Corrección Humana:** *Pendiente.* Hecho hasta ahora: 6 tests en `test_pdf.py` que leen el texto del PDF generado con `pypdf` (resumen, acentos, orden por gravedad, sin problemas, motores con errores, límite de hallazgos, texto con marcas y caracteres raros) y 1 en `test_reports.py` (si falla el PDF, los JSON quedan). Se generó el PDF del repo de demo y se revisó cómo se ve. `pytest` pasa completo.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #36
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
