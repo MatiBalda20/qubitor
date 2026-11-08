@@ -29,6 +29,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Semgrep (SAST de JavaScript) solo existe para Linux y macOS: va acá y no en
+# requirements.txt, así el backend se sigue pudiendo instalar en Windows.
+RUN pip install --no-cache-dir "semgrep>=1.90,<2"
+
 # Copiamos el código del backend
 COPY . /app/
 
