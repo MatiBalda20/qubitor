@@ -111,3 +111,13 @@ def test_clerk_caido(clerk_falso):
 
     with pytest.raises(GitHubUnavailable):
         get_github_token("user_1")
+
+
+@pytest.mark.parametrize("base", ["http://api.clerk.com/v1", "file:///etc/passwd", "ftp://x"])
+def test_solo_consulta_clerk_por_https(clerk_falso, monkeypatch, base):
+    pedidos, _ = clerk_falso
+    monkeypatch.setenv("CLERK_API_URL", base)
+
+    with pytest.raises(GitHubUnavailable):
+        get_github_token("user_1")
+    assert pedidos == []

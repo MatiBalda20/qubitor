@@ -35,6 +35,9 @@ def get_github_token(clerk_user_id: str) -> str:
         raise GitHubUnavailable("La integración con GitHub no está configurada (falta CLERK_SECRET_KEY)")
 
     base_url = os.getenv("CLERK_API_URL", DEFAULT_CLERK_API_URL).rstrip("/")
+    if not base_url.startswith("https://"):
+        # La clave secreta solo viaja por HTTPS; urlopen además aceptaría file:// u otros esquemas.
+        raise GitHubUnavailable("CLERK_API_URL tiene que ser una URL https://")
     for provider in _providers():
         url = f"{base_url}/users/{quote(clerk_user_id)}/oauth_access_tokens/{quote(provider)}"
         tokens = _request(url, secret_key)
