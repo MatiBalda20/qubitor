@@ -193,6 +193,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(api): endpoints REST y autenticación con Clerk
 
+### [2026-11-08] Reportes y CBOM en Cloudflare R2 (backend/app/storage)
+
+- **Problema abordado:** Guardar el resultado de cada escaneo fuera de la base, en un bucket S3-compatible (Cloudflare R2), para descargarlo desde la interfaz con URLs firmadas que vencen. Es el componente cloud del Módulo D (equivalente a S3 en AWS).
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** `storage/reports.py` arma dos JSON por escaneo: `report.json` (Risk Score, resumen por severidad y hallazgos) y `cbom.json` (solo criptografía, también la segura). `ReportStorage` los sube con `boto3` a `reports/<scan_id>/` como descarga y genera URLs firmadas de 10 minutos; si el archivo no existe devuelve None. `archive_scan` no lanza excepciones: si el bucket falla, el escaneo ya quedó guardado y solo se registra en el log. Sin las variables `R2_*` no hace nada y `boto3` no se carga. `R2_ENDPOINT` permite probar con otro servicio S3-compatible. El scan-worker (`worker/job.py`, Módulo A) llama a `archive_scan` después de guardar el escaneo.
+- **Validación y Corrección Humana:** Corrí `pytest` en mi máquina: pasan los 15 tests con un bucket falso (contenido del reporte y del CBOM, URL firmada, archivo faltante, error del bucket, ids que arman otra ruta) y los 2 del worker (se guarda después del escaneo, no se guarda si falla). Lo probé con MinIO en Docker como bucket S3-compatible: el test contra el bucket real pasa, la URL vencida y la URL sin firma dan 403, y un escaneo completo del repo de demo dejó el reporte y el CBOM descargables. Pendiente: probarlo con una cuenta real de Cloudflare R2.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #30
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
