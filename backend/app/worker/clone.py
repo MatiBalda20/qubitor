@@ -29,9 +29,14 @@ class CloneRejected(CloneError):
     """El repo no se va a poder clonar nunca: no tiene sentido reintentar."""
 
 
+def is_github_url(url: str) -> bool:
+    """True si es la URL de un repo de GitHub que se puede clonar."""
+    return bool(_GITHUB_URL.match(url))
+
+
 def clone_repository(url: str, destination: str) -> str:
     """Clona el último commit de `url` en `destination` y devuelve su SHA."""
-    if not _GITHUB_URL.match(url):
+    if not is_github_url(url):
         raise CloneRejected("Solo se pueden escanear URLs públicas de GitHub")
     _run_clone(_clone_command(url, destination), destination)
     return subprocess.run(

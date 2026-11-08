@@ -183,6 +183,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #23
 
+### [2026-11-08] Endpoints REST y autenticación con Clerk
+
+- **Problema abordado:** El frontend tenía el cliente de la API listo pero no había endpoints: seguía con datos de ejemplo. Hacían falta los seis endpoints del plan y validar la sesión de Clerk en cada request, separando los datos por organización.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo los tipos del frontend (`types/Scan.ts`, `types/Finding.ts`) y el cliente `lib/api.ts`.
+- **Código / Arquitectura generada:** `app/api/auth.py` valida el JWT (RS256, JWKS de Clerk con caché, vencimiento, emisor y `azp` contra los orígenes de CORS) y crea el usuario y su organización la primera vez; sin organización activa en Clerk se usa una personal. `app/api/routes.py`: `GET/POST /repositories`, `POST /repositories/{id}/scans` (crea el escaneo en cola y lo encola; si ya hay uno activo lo devuelve), `GET /repositories/{id}/history` (del más nuevo al más viejo), `GET /scans/{id}`, `GET /scans/{id}/findings` (por severidad efectiva) y `PATCH /findings/{id}` (recalcula el Risk Score con los abiertos que la IA no marcó como falso positivo, igual que el frontend). `app/api/schemas.py` con el formato de respuesta. 35 tests nuevos.
+- **Validación y Corrección Humana:** Tests de autenticación con tokens firmados en el test: vencido, otro emisor, otra clave, HS256, otro `azp` y sin `sub`. Endpoints probados contra Postgres 16 en Docker, incluido que otra organización recibe 404 en todo y no puede modificar nada; se comprobó que el test falla si se quita el filtro por organización. Se verificó que el JWKS real de Clerk responde. También se probó la API con la sesión real de la base y la cola. Decisiones: un recurso de otra organización responde 404 y no 403, para no revelar que existe; `AUTH_DISABLED` solo para desarrollo local. Limitaciones: `progress` y `stage` del escaneo quedan en null mientras corre, porque el worker todavía no informa la etapa; un usuario pertenece a una sola organización a la vez.
+- **Correcciones de la revisión antes del PR:** Si el worker se caía o el trabajo vencía, el escaneo quedaba en curso para siempre y el repo no se podía volver a escanear; ahora, pasados 30 minutos, se marca como fallido y se lanza uno nuevo. Además, `Acme/Demo` y `acme/demo` se conectaban como dos repos distintos. Ambos casos se reprodujeron con tests antes de corregirlos. Queda como limitación que dos pedidos simultáneos para el mismo repo pueden crear dos escaneos.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(api): endpoints REST y autenticación con Clerk
 ### [2026-11-08] Guardado del escaneo en Postgres (SqlScanStore)
 
 - **Problema abordado:** El scan-worker solo registraba los resultados en el log. Hacía falta guardar el estado del escaneo, el Risk Score y los hallazgos en Supabase, con los modelos de la PR #18, para que la API y el frontend muestren escaneos reales.
