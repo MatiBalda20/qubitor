@@ -6,9 +6,10 @@ organización responde 404, igual que uno que no existe, para no revelar nada.
 
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.auth import CurrentUser, get_current_user
@@ -27,7 +28,7 @@ from app.models.database import get_db
 from app.models.models import Finding, FindingStatus, Repository, Scan, ScanStatus
 from app.orchestrator.risk import grade, risk_score
 from app.worker.clone import is_github_url
-from app.worker.queue import enqueue_scan
+from app.worker.queue import JOB_TIMEOUT_SECONDS, MAX_RETRIES, enqueue_scan
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,8 @@ router = APIRouter()
 
 HISTORY_LIMIT = 50
 _ACTIVE = (ScanStatus.QUEUED, ScanStatus.RUNNING)
+# Más de lo que pueden durar todos los intentos de un trabajo, con margen para la espera en la cola.
+STALE_AFTER = timedelta(seconds=JOB_TIMEOUT_SECONDS * (MAX_RETRIES + 1)) + timedelta(minutes=15)
 _SEVERITY_RANK = {severity: rank for rank, severity in enumerate(Severity)}
 
 
@@ -60,8 +63,11 @@ def connect_repository(
     if not is_github_url(url):
         raise HTTPException(422, "Solo se pueden conectar repos públicos de GitHub")
 
+    # GitHub no distingue mayúsculas en owner/repo: Acme/Demo y acme/demo son el mismo.
     repo = db.scalar(
-        select(Repository).where(Repository.organization_id == user.organization_id, Repository.url == url)
+        select(Repository).where(
+            Repository.organization_id == user.organization_id, func.lower(Repository.url) == url.lower()
+        )
     )
     if repo is not None:
         response.status_code = status.HTTP_200_OK
@@ -91,9 +97,15 @@ def start_scan(
     active = db.scalar(
         select(Scan).where(Scan.repository_id == repo.id, Scan.status.in_(_ACTIVE)).order_by(Scan.created_at.desc())
     )
-    if active is not None:
+    if active is not None and not _is_stale(active):
         response.status_code = status.HTTP_200_OK
         return scan_out(active)
+    if active is not None:
+        # El worker se cayó o el trabajo venció sin avisar: sin esto, el repo no
+        # se podría volver a escanear nunca.
+        active.status = ScanStatus.FAILED
+        active.error = "El escaneo no terminó a tiempo: el worker se detuvo o superó el tiempo límite"
+        active.finished_at = datetime.now(timezone.utc)
 
     scan = Scan(repository_id=repo.id, status=ScanStatus.QUEUED)
     db.add(scan)
@@ -181,6 +193,12 @@ def _get_scan(db: Session, scan_id: uuid.UUID, user: CurrentUser) -> Scan:
     if scan is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe el escaneo")
     return scan
+
+
+def _is_stale(scan: Scan) -> bool:
+    """True si el escaneo lleva más tiempo activo del que puede durar."""
+    since = scan.started_at or scan.created_at
+    return since is not None and datetime.now(timezone.utc) - since > STALE_AFTER
 
 
 def _normalize_url(url: str) -> str:

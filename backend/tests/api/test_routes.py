@@ -298,3 +298,46 @@ def test_ids_inexistentes_responden_404(client):
     client.get("/repositories", headers=headers())
     for ruta in (f"/scans/{uuid.uuid4()}", f"/repositories/{uuid.uuid4()}/history"):
         assert client.get(ruta, headers=headers()).status_code == 404
+
+
+def test_mismo_repo_con_otras_mayusculas_es_el_mismo(client):
+    # GitHub no distingue mayúsculas en owner/repo.
+    primero = _conectar(client, url="https://github.com/Acme/Demo").json()
+    segundo = _conectar(client, url="https://github.com/acme/demo")
+
+    assert segundo.status_code == 200
+    assert segundo.json()["id"] == primero["id"]
+
+
+def test_un_escaneo_trabado_no_bloquea_el_repo(client, db, encolados):
+    # Si el worker se cae o el trabajo vence, el escaneo queda en curso para siempre.
+    from app.models.models import Scan, ScanStatus
+
+    repo = _conectar(client).json()
+    trabado = _escanear(client, repo["id"]).json()["id"]
+    with db() as session, session.begin():
+        scan = session.get(Scan, uuid.UUID(trabado))
+        scan.status = ScanStatus.RUNNING
+        scan.created_at = scan.started_at = datetime.now(timezone.utc) - timedelta(hours=2)
+
+    nuevo = _escanear(client, repo["id"])
+
+    assert nuevo.status_code == 202
+    assert nuevo.json()["id"] != trabado
+    viejo = client.get(f"/scans/{trabado}", headers=headers()).json()
+    assert viejo["status"] == "failed"
+    assert "no terminó" in viejo["error"]
+    assert len(encolados) == 2
+
+
+def test_un_escaneo_reciente_en_curso_no_se_corta(client, db, encolados):
+    from app.models.models import Scan, ScanStatus
+
+    repo = _conectar(client).json()
+    en_curso = _escanear(client, repo["id"]).json()["id"]
+    with db() as session, session.begin():
+        scan = session.get(Scan, uuid.UUID(en_curso))
+        scan.status = ScanStatus.RUNNING
+        scan.started_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+
+    assert _escanear(client, repo["id"]).json()["id"] == en_curso
