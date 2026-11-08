@@ -235,6 +235,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #24
 
+### [2026-11-08] Evolución del Risk Score en el Historial
+
+- **Problema abordado:** El plan pide que la pantalla «Historial» tenga un gráfico de evolución del Risk Score con los hallazgos nuevos y resueltos entre un escaneo y otro. La primera versión solo tenía la lista.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` y una guía de visualización de datos (una sola serie sin leyenda, un solo eje, marcas finas, tooltip también con teclado).
+- **Código / Arquitectura generada:** Backend: `GET /repositories/{id}/history` agrega `new_findings` y `resolved_findings` a cada escaneo completado, comparando sus fingerprints con los del completado anterior; no cuenta los hallazgos info (inventario) y saltea los fallidos. Frontend: `RiskTrendChart.tsx` en SVG propio, sin librerías nuevas: línea del Risk Score en el tiempo con la grilla en los cortes de las notas, solo el último valor etiquetado, crosshair y tooltip con nota, nuevos, resueltos y fecha, navegable con las flechas. La tabla suma la columna «Nuevos / resueltos». 3 tests nuevos de backend.
+- **Validación y Corrección Humana:** Tests contra Postgres 16 para el conteo, incluidos los info y un fallido en el medio. Revisado en el navegador a 1440 px y 375 px, con el tooltip por mouse y por teclado, sin errores en consola. Los hallazgos nuevos y resueltos no se dibujan en un segundo eje (escala distinta): van en el tooltip y en la tabla. En el celular el gráfico no aparecía porque el ancho solo se medía con el primer aviso de `ResizeObserver`, que puede no llegar; ahora se mide al montarse.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(history): evolución del Risk Score
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
