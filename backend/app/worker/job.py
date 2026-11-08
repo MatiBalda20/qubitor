@@ -13,6 +13,7 @@ from app.engines.secrets.engine import SecretsEngine
 from app.orchestrator.pipeline import ScanResult, analyze_repository
 from app.storage import archive_scan
 from app.worker.clone import CloneRejected, clone_repository, remove_tree
+from app.worker.progress import report_stage
 from app.worker.store import get_store
 
 
@@ -32,11 +33,13 @@ def run_scan(scan_id: str, repo_url: str) -> dict:
     workdir = tempfile.mkdtemp(prefix=f"scan-{scan_id}-", dir=os.getenv("REPOS_DIR"))
     try:
         repo_path = os.path.join(workdir, "repo")
+        report_stage("clone")
         commit_sha = clone_repository(repo_url, repo_path)
-        result = analyze_repository(repo_path, default_engines())
+        result = analyze_repository(repo_path, default_engines(), on_stage=report_stage)
         if result.failed:
             store.mark_failed(scan_id, "Fallaron todos los motores")
             return _summary("failed", result=result)
+        report_stage("persist")
         store.save_result(scan_id, commit_sha, result)
         # Reporte y CBOM en R2 (Módulo D). Si el bucket falla no lanza: el escaneo ya quedó guardado.
         archive_scan(scan_id, repo_url, commit_sha, result)

@@ -341,3 +341,37 @@ def test_un_escaneo_reciente_en_curso_no_se_corta(client, db, encolados):
         scan.started_at = datetime.now(timezone.utc) - timedelta(minutes=5)
 
     assert _escanear(client, repo["id"]).json()["id"] == en_curso
+
+
+# Progreso del escaneo en curso
+
+
+def test_escaneo_en_curso_muestra_la_etapa_del_worker(client, db, monkeypatch):
+    from app.models.models import Scan, ScanStatus
+
+    consultados = []
+    monkeypatch.setattr(routes, "read_progress", lambda scan_id: consultados.append(scan_id) or ("engines", 20))
+    repo = _conectar(client).json()
+    scan_id = _escanear(client, repo["id"]).json()["id"]
+    with db() as session, session.begin():
+        session.get(Scan, uuid.UUID(scan_id)).status = ScanStatus.RUNNING
+
+    scan = client.get(f"/scans/{scan_id}", headers=headers()).json()
+
+    assert (scan["status"], scan["stage"], scan["progress"]) == ("running", "engines", 20)
+    assert consultados == [scan_id]
+
+
+def test_escaneo_en_cola_o_terminado_no_consulta_redis(client, db, monkeypatch):
+    consultados = []
+    monkeypatch.setattr(routes, "read_progress", lambda scan_id: consultados.append(scan_id) or ("engines", 20))
+    repo = _conectar(client).json()
+    scan_id = _escanear(client, repo["id"]).json()["id"]
+
+    en_cola = client.get(f"/scans/{scan_id}", headers=headers()).json()
+    _terminar(db, scan_id)
+    terminado = client.get(f"/scans/{scan_id}", headers=headers()).json()
+
+    assert (en_cola["stage"], en_cola["progress"]) == (None, None)
+    assert (terminado["stage"], terminado["progress"]) == (None, 100)
+    assert consultados == []

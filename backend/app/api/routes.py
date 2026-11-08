@@ -28,6 +28,7 @@ from app.models.database import get_db
 from app.models.models import Finding, FindingStatus, Repository, Scan, ScanStatus
 from app.orchestrator.risk import grade, risk_score
 from app.worker.clone import is_github_url
+from app.worker.progress import read_progress
 from app.worker.queue import JOB_TIMEOUT_SECONDS, MAX_RETRIES, enqueue_scan
 
 logger = logging.getLogger(__name__)
@@ -135,7 +136,10 @@ def repository_history(
 
 @router.get("/scans/{scan_id}", response_model=ScanOut)
 def get_scan(scan_id: uuid.UUID, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    return scan_out(_get_scan(db, scan_id, user))
+    """El frontend lo consulta cada 1,5 s mientras el escaneo corre, para la barra de progreso."""
+    scan = _get_scan(db, scan_id, user)
+    live = read_progress(str(scan.id)) if scan.status == ScanStatus.RUNNING else (None, None)
+    return scan_out(scan, live)
 
 
 @router.get("/scans/{scan_id}/findings", response_model=list[FindingOut])

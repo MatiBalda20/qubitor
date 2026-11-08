@@ -121,7 +121,7 @@ def test_siempre_borra_el_clon(store, clones, monkeypatch, tmp_path):
 
 
 def test_borra_el_clon_si_explota_el_analisis(store, clones, monkeypatch, tmp_path):
-    def explota(*args):
+    def explota(*args, **kwargs):
         raise ValueError("bug")
 
     monkeypatch.setattr(job_module, "analyze_repository", explota)
