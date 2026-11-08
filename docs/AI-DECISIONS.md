@@ -183,6 +183,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #23
 
+### [2026-11-08] Guardado del escaneo en Postgres (SqlScanStore)
+
+- **Problema abordado:** El scan-worker solo registraba los resultados en el log. Hacía falta guardar el estado del escaneo, el Risk Score y los hallazgos en Supabase, con los modelos de la PR #18, para que la API y el frontend muestren escaneos reales.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5): implementar la interfaz `ScanStore` con SQLAlchemy y probarla contra un Postgres real.
+- **Código / Arquitectura generada:** `app/worker/sql_store.py` con `SqlScanStore`: `mark_running`, `save_result` y `mark_failed` actualizan la fila del escaneo que crea la API, cada uno en su propia transacción. `save_result` borra los hallazgos previos del escaneo antes de insertar, para que un reintento no los duplique. `get_store` usa la base si hay `DATABASE_URL` y, si no, sigue registrando en el log. 11 tests en `tests/worker/test_sql_store.py`, que corren con `QUBITOR_TEST_DATABASE_URL`.
+- **Validación y Corrección Humana:** Probado contra Postgres 16 en Docker: estados del escaneo, hallazgos con su fingerprint, severidad y estado guardados por valor (`high`, `open`, `completed`), guardar dos veces sin duplicar, rollback completo si falla a mitad del guardado y el job completo de punta a punta escribiendo en la base. Para comprobar que los tests detectan errores, se quitó el borrado previo y el test de duplicados falló. Un escaneo inexistente o con id inválido se registra en el log y no se reintenta. Pendiente: la migración de Alembic y el RLS (Alvaro está levantando Supabase); los tests crean las tablas con `create_all`.
+- **Correcciones de la revisión antes del PR:** Postgres rechaza el byte nulo en textos y JSONB, así que un archivo del repo con ese carácter hacía fallar el guardado de todo el escaneo (y se reintentaba en vano); se reprodujo con un test y ahora se quita antes de guardar. En `.env.example`, `DATABASE_URL` quedó comentada: con el valor de ejemplo el worker intentaba conectarse a una base inexistente.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(worker): guardar el escaneo y sus hallazgos en Postgres
 ### [2026-11-07] Vista «Preparación post-cuántica» (frontend/src/features/pqc)
 
 - **Problema abordado:** Mostrar qué criptografía usa el repositorio (CBOM), qué parte rompería una computadora cuántica y en qué orden migrar a ML-KEM (FIPS 203) y ML-DSA (FIPS 204). Los hallazgos de `pqc.py` y de `classic.py` llegan sueltos: hay que clasificarlos por amenaza y agruparlos en pasos de migración.
