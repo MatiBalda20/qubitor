@@ -1,0 +1,131 @@
+{
+  "repository": {
+    "id": "repo_demo",
+    "provider": "github",
+    "full_name": "ValentinaPertile/qubitor-demo-vulnerable",
+    "url": "https://github.com/ValentinaPertile/qubitor-demo-vulnerable",
+    "default_branch": "main",
+    "connected_at": "2026-11-02T14:05:00Z"
+  },
+  "scan": {
+    "id": "scan_0007",
+    "repository_id": "repo_demo",
+    "status": "completed",
+    "engines": [
+      "sast",
+      "sca",
+      "secrets",
+      "crypto"
+    ],
+    "progress": 100,
+    "stage": "persist",
+    "commit_sha": "0cd43c6",
+    "started_at": "2026-11-07T15:20:04Z",
+    "finished_at": "2026-11-07T15:21:10Z",
+    "risk_score": 42.5,
+    "grade": "D",
+    "error": null
+  },
+  "findings": [
+    {
+      "id": "fnd_crypto_01",
+      "scan_id": "scan_0007",
+      "fingerprint": "93839caaafb9f022",
+      "engine": "crypto",
+      "rule_id": "crypto.pqc.rsa-keygen",
+      "title": "Generación de clave RSA vulnerable a computación cuántica",
+      "severity": "medium",
+      "file_path": "app/keys.py",
+      "line": 10,
+      "snippet": "rsa.generate_private_key(public_exponent=65537, key_size=2048)",
+      "description": "RSA es vulnerable al algoritmo de Shor: una computadora cuántica suficientemente grande podría romperlo. Los datos cifrados hoy pueden guardarse y descifrarse en el futuro (riesgo «cosechar ahora, descifrar después»). Planificar la migración a ML-KEM (FIPS 203) para intercambio de claves y a ML-DSA (FIPS 204) para firmas.",
+      "cwe": "CWE-327",
+      "cve": null,
+      "metadata": {
+        "algorithm": "RSA"
+      },
+      "status": "open",
+      "triage": null
+    },
+    {
+      "id": "fnd_crypto_02",
+      "scan_id": "scan_0007",
+      "fingerprint": "4e061a48cff4f073",
+      "engine": "crypto",
+      "rule_id": "crypto.pqc.ecdh",
+      "title": "Intercambio de claves ECDH vulnerable a computación cuántica",
+      "severity": "medium",
+      "file_path": "app/keys.py",
+      "line": 15,
+      "snippet": "ec.ECDH()",
+      "description": "ECDH es vulnerable al algoritmo de Shor: una computadora cuántica suficientemente grande podría romperlo. Los datos cifrados hoy pueden guardarse y descifrarse en el futuro (riesgo «cosechar ahora, descifrar después»). Planificar la migración a ML-KEM (FIPS 203) para intercambio de claves y a ML-DSA (FIPS 204) para firmas.",
+      "cwe": "CWE-327",
+      "cve": null,
+      "metadata": {
+        "algorithm": "ECDH"
+      },
+      "status": "open",
+      "triage": null
+    },
+    {
+      "id": "fnd_crypto_03",
+      "scan_id": "scan_0007",
+      "fingerprint": "be67d2aa93b7492e",
+      "engine": "crypto",
+      "rule_id": "crypto.pqc.aes-128",
+      "title": "Cifrado AES-128 debilitado por computación cuántica",
+      "severity": "low",
+      "file_path": "app/keys.py",
+      "line": 20,
+      "snippet": "AESGCM.generate_key(bit_length=128)",
+      "description": "AES-128 es vulnerable al algoritmo de Grover: una computadora cuántica reduciría su seguridad efectiva a la mitad (de 128 a 64 bits). Para datos que deben seguir siendo secretos por muchos años, preferir AES-256.",
+      "cwe": "CWE-327",
+      "cve": null,
+      "metadata": {
+        "algorithm": "AES-128"
+      },
+      "status": "open",
+      "triage": null
+    },
+    {
+      "id": "fnd_crypto_04",
+      "scan_id": "scan_0007",
+      "fingerprint": "7008506523afa64e",
+      "engine": "crypto",
+      "rule_id": "crypto.pqc.inventory.hash",
+      "title": "Uso de SHA-256 (inventario criptográfico)",
+      "severity": "info",
+      "file_path": "app/keys.py",
+      "line": 25,
+      "snippet": "hashes.SHA256()",
+      "description": "Uso de SHA-256 registrado en el inventario criptográfico (CBOM). No tiene un riesgo post-cuántico conocido.",
+      "cwe": "CWE-327",
+      "cve": null,
+      "metadata": {
+        "algorithm": "SHA-256"
+      },
+      "status": "open",
+      "triage": null
+    },
+    {
+      "id": "fnd_crypto_05",
+      "scan_id": "scan_0007",
+      "fingerprint": "aa598c8a0baf6ab1",
+      "engine": "crypto",
+      "rule_id": "crypto.pqc.ec-keygen",
+      "title": "Generación de clave de curva elíptica vulnerable a computación cuántica",
+      "severity": "medium",
+      "file_path": "app/signing.js",
+      "line": 5,
+      "snippet": "generateKeyPairSync('ec'…",
+      "description": "ECC es vulnerable al algoritmo de Shor: una computadora cuántica suficientemente grande podría romperlo. Los datos cifrados hoy pueden guardarse y descifrarse en el futuro (riesgo «cosechar ahora, descifrar después»). Planificar la migración a ML-KEM (FIPS 203) para intercambio de claves y a ML-DSA (FIPS 204) para firmas.",
+      "cwe": "CWE-327",
+      "cve": null,
+      "metadata": {
+        "algorithm": "ECC"
+      },
+      "status": "open",
+      "triage": null
+    }
+  ]
+}

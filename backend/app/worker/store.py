@@ -1,11 +1,12 @@
 """Persistencia del resultado de un escaneo, vista desde el scan-worker.
 
-El worker solo conoce esta interfaz. `LogScanStore` deja el pipeline andando
-mientras no estén los modelos: cuando se mergeen, se agrega la implementación
-con SQLAlchemy y se cambia `get_store`, sin tocar la cola ni el job.
+El worker solo conoce esta interfaz. Con `DATABASE_URL` configurada guarda en
+Postgres (`SqlScanStore`); sin ella, `LogScanStore` deja el pipeline andando
+para probar la cola en local sin una base.
 """
 
 import logging
+import os
 from typing import Protocol
 
 from app.orchestrator.pipeline import ScanResult
@@ -38,4 +39,9 @@ class LogScanStore:
 
 
 def get_store() -> ScanStore:
-    return LogScanStore()
+    if not os.getenv("DATABASE_URL"):
+        return LogScanStore()
+    # Se importa acá para que el worker funcione sin las dependencias de la base.
+    from app.worker.sql_store import SqlScanStore
+
+    return SqlScanStore()

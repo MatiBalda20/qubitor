@@ -45,3 +45,6 @@ logs/
 scratch/
 tmp/
 temp/
+
+#repomix
+repomix-output.xml
