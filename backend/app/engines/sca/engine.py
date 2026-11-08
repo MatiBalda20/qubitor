@@ -1,6 +1,7 @@
 """Motor SCA: dependencias con vulnerabilidades conocidas (Módulo D)."""
 
 from app.engines.base import Engine, Finding
+from app.engines.sca.cache import default_osv_client
 from app.engines.sca.findings import has_severity, vulnerability_to_finding
 from app.engines.sca.manifests import find_dependencies
 from app.engines.sca.osv import OsvClient
@@ -16,7 +17,8 @@ class ScaEngine(Engine):
     name = "sca"
 
     def __init__(self, client: OsvClient | None = None):
-        self.client = client or OsvClient()
+        # Sin un cliente dado, usa OSV con la caché de KV si está configurada.
+        self.client = client or default_osv_client()
 
     def scan(self, repo_path: str) -> list[Finding]:
         dependencies = find_dependencies(repo_path)
