@@ -235,6 +235,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #24
 
+### [2026-11-08] SAST de JavaScript con Semgrep
+
+- **Problema abordado:** El SAST solo analizaba Python con Bandit. El plan pide Semgrep con reglas locales para JavaScript y, si no entra en los 512 MB del plan free de Render, documentar el límite.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** `app/engines/sast/rules/javascript.yml` con 7 reglas propias para JavaScript y TypeScript (eval, new Function, comando de shell y consulta SQL armados con datos variables, innerHTML/outerHTML, document.write y setTimeout/setInterval con texto), cada una con CWE. Son locales porque las del registro de Semgrep tienen licencia propia. `semgrep.py` ejecuta Semgrep y convierte su salida a `Finding`; `SastEngine` corre Bandit y Semgrep en paralelo y, si falla uno, devuelve los hallazgos del otro. Semgrep se instala solo en la imagen del worker y `SEMGREP_ENABLED=false` lo apaga. 15 tests nuevos.
+- **Validación y Corrección Humana:** Semgrep no existe para Windows: los tests con Semgrep real se corrieron dentro de la imagen del worker (Linux), donde pasaron todos, incluidos los de symlinks que fallan en Windows. Medición con la imagen limitada a 512 MB y sin swap, escaneo completo con los 4 motores: OWASP Juice Shop (JavaScript grande) falló en el primer intento, porque Semgrep lanza un proceso por CPU (12) y, sumado a los demás motores, el contenedor llegó al tope. Con `--jobs 1` terminó bien dos veces seguidas en unos 28 s (11 hallazgos de Semgrep). Express y el propio repo de Qubitor también terminan bien. Conclusión para la defensa: entra en 512 MB, pero en repos grandes de JavaScript queda al límite; si en Render falla, Semgrep cae solo, el SAST sigue con Bandit y se puede apagar con la variable. La salida de Semgrep sin cuenta ya no incluye el código («requires login»), así que el snippet se lee del repo clonado y se enmascaran los textos, también los template literals. Se corrigió un caso en el que, sin Semgrep instalado, un error de Bandit se perdía en silencio.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(sast): SAST de JavaScript con Semgrep
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
