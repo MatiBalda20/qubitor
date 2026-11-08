@@ -2,10 +2,12 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Utilizar el puerto 6543 para el connection pooler de Supabase
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/qubitor")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# FIX: prepare_threshold=None para Supabase (PgBouncer) y pool_pre_ping para conexiones caídas
+# Falla rápido y claro si falta la variable
+if not DATABASE_URL:
+    raise ValueError("Falta la variable de entorno DATABASE_URL")
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
