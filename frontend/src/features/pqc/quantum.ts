@@ -60,6 +60,7 @@ const SHOR_RULES: Record<string, { algorithm: string; use: AsymmetricUse }> = {
   'crypto.pqc.rsa-keygen': { algorithm: 'RSA', use: 'both' },
   'crypto.pqc.ec-keygen': { algorithm: 'ECC', use: 'both' },
   'crypto.pqc.ecdsa': { algorithm: 'ECDSA', use: 'signature' },
+  'crypto.pqc.eddsa': { algorithm: 'EdDSA', use: 'signature' },
   'crypto.pqc.ecdh': { algorithm: 'ECDH', use: 'exchange' },
   'crypto.pqc.dh': { algorithm: 'DH', use: 'exchange' },
   'crypto.pqc.dsa-keygen': { algorithm: 'DSA', use: 'signature' },

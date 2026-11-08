@@ -183,6 +183,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #24
 
+### [2026-11-08] Firmas ECDSA en JavaScript y curvas Ed25519 / X25519 (crypto/pqc.py)
+
+- **Problema abordado:** El detector post-cuántico no reconocía Ed25519, Ed448, X25519 ni X448, que son las curvas más usadas hoy y también las rompe Shor. Además, en JavaScript una clave EC que se usa para firmar (como la de `app/signing.js` del repo de demo) quedaba como «clave de uso indefinido», así que la hoja de ruta no la mandaba a ML-DSA.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** Regla nueva `crypto.pqc.eddsa` (medium) para Ed25519 y Ed448; X25519 y X448 se reportan como `crypto.pqc.ecdh`, porque son ECDH sobre otras curvas. En Python se detecta `Ed25519PrivateKey.generate()` y equivalentes de `cryptography`; en JavaScript, `generateKeyPair('ed25519' | 'ed448' | 'x25519' | 'x448')`. Si un archivo JavaScript genera una clave EC y además firma o verifica (`crypto.sign`, `crypto.verify`, `createSign`, `createVerify`), la clave se reporta como `crypto.pqc.ecdsa`. En la vista, `quantum.ts` manda `crypto.pqc.eddsa` al paso de firmas; el mock y el test del repo de demo se actualizaron.
+- **Validación y Corrección Humana:** Leí los cambios en `pqc.py` y corrí `pytest` en mi máquina: pasan los 9 tests nuevos (positivos y negativos: cargar una clave Ed25519 sin generarla, firmar dentro de un comentario, firmar con una clave RSA) y el test del repo de demo con `QUBITOR_TESTS_RED=1`. En la vista revisé que la firma de `app/signing.js` ahora cae en el paso «Migrar las firmas a ML-DSA». `tsc -b`, `eslint` y `vite build` dan sin errores. Limitación: en JavaScript la firma se detecta por archivo; si la clave EC se genera en un archivo y se usa para firmar en otro, sigue apareciendo como clave de uso indefinido.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #29
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
