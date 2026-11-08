@@ -110,19 +110,19 @@
     {
       "id": "fnd_crypto_05",
       "scan_id": "scan_0007",
-      "fingerprint": "aa598c8a0baf6ab1",
+      "fingerprint": "60e4347c3c2d9a40",
       "engine": "crypto",
-      "rule_id": "crypto.pqc.ec-keygen",
-      "title": "Generación de clave de curva elíptica vulnerable a computación cuántica",
+      "rule_id": "crypto.pqc.ecdsa",
+      "title": "Firma ECDSA vulnerable a computación cuántica",
       "severity": "medium",
       "file_path": "app/signing.js",
       "line": 5,
       "snippet": "generateKeyPairSync('ec'…",
-      "description": "ECC es vulnerable al algoritmo de Shor: una computadora cuántica suficientemente grande podría romperlo. Los datos cifrados hoy pueden guardarse y descifrarse en el futuro (riesgo «cosechar ahora, descifrar después»). Planificar la migración a ML-KEM (FIPS 203) para intercambio de claves y a ML-DSA (FIPS 204) para firmas.",
+      "description": "ECDSA es vulnerable al algoritmo de Shor: una computadora cuántica suficientemente grande podría romperlo. Los datos cifrados hoy pueden guardarse y descifrarse en el futuro (riesgo «cosechar ahora, descifrar después»). Planificar la migración a ML-KEM (FIPS 203) para intercambio de claves y a ML-DSA (FIPS 204) para firmas.",
       "cwe": "CWE-327",
       "cve": null,
       "metadata": {
-        "algorithm": "ECC"
+        "algorithm": "ECDSA"
       },
       "status": "open",
       "triage": null
