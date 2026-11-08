@@ -183,6 +183,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #23
 
+### [2026-11-08] Caché de OSV en Cloudflare Workers KV (engines/sca/cache.py)
+
+- **Problema abordado:** Cada escaneo consultaba OSV por todas las dependencias y por el detalle de cada vulnerabilidad, aunque el mismo paquete y versión se hubiera consultado minutos antes. Las vulnerabilidades de una versión cambian poco de un día para otro, así que conviene cachearlas en una base clave-valor NoSQL (Cloudflare Workers KV, equivalente a DynamoDB en AWS).
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5). Se consultó la documentación de la API REST de Workers KV para confirmar la lectura de hasta 100 claves por pedido.
+- **Código / Arquitectura generada:** `cache.py` tiene `KvCache`, un cliente mínimo de la API REST de KV que lee de a 100 claves (`bulk/get`) y escribe en lote (`bulk`) con vencimiento de 24 horas, y `CachedOsvClient`, que se usa igual que `OsvClient`: guarda por `ecosistema|paquete|versión` los ids de las vulnerabilidades (también la lista vacía, que es el caso más común) y por id el detalle de cada una. Un valor roto en la caché se vuelve a pedir a OSV; si KV falla, la caché se apaga para ese escaneo y se consulta OSV directo. Sin las variables `CF_*` el motor usa OSV directo, como antes. Para leer los detalles en lote, el pedido en paralelo pasó del motor a `OsvClient.get_vulns`.
+- **Validación y Corrección Humana:** *Pendiente.* Hecho hasta ahora: 13 tests en `test_sca_cache.py` con KV y OSV falsos (primera consulta y guardado, segunda sin OSV, solo las que faltan y en orden, otra versión es otra clave, detalles, valores rotos, KV caído, motor completo con dos escaneos, variables de entorno) y con la API de Cloudflare simulada (lotes de 100, token, vencimiento de 24 h, error de la API); 2 tests de `get_vulns`. `pytest` pasa completo, incluido el test contra OSV real. Falta probarlo con una cuenta real de Cloudflare.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #33
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
