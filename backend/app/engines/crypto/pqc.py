@@ -234,6 +234,10 @@ def _js_hash(match: re.Match) -> _Rule | None:
 
 _QUOTE = r"""['"`]"""
 
+# Firmar o verificar con el módulo crypto de Node.js. Si el archivo genera una
+# clave EC y además firma, esa clave es de ECDSA: va a ML-DSA, no a ML-KEM.
+_JS_SIGNING = re.compile(r"\bcrypto\.(?:sign|verify)\s*\(|\bcreate(?:Sign|Verify)\s*\(")
+
 # Cada regla: patrón a buscar → regla que dispara, o una función que mira lo
 # encontrado y elige la regla (igual que CALL_RULES para Python).
 JS_RULES: list[tuple[re.Pattern, _Rule | Callable[[re.Match], _Rule | None]]] = [
@@ -374,12 +378,15 @@ def _int_argument(node: ast.Call, position: int, keyword: str) -> int | None:
 
 def _scan_js_source(source: str, file_path: str) -> list[Finding]:
     code = _strip_js_comments(source)
+    signs = _JS_SIGNING.search(code) is not None
     findings: list[Finding] = []
     for pattern, rule in JS_RULES:
         for match in pattern.finditer(code):
             found = rule(match) if callable(rule) else rule
             if found is None:
                 continue
+            if found is _EC_KEYGEN and signs:
+                found = _ECDSA
             line = code.count("\n", 0, match.start()) + 1
             # Solo hasta el nombre del algoritmo: lo que sigue (claves, IVs)
             # puede ser secreto y no debe quedar en el reporte.

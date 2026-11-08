@@ -437,6 +437,43 @@ def test_js_tipo_de_clave_sin_riesgo_cuantico_conocido_no_es_hallazgo(tmp_path):
     assert hallazgos == []
 
 
+def test_js_clave_ec_que_firma_es_ecdsa(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });\n"
+        "const firma = crypto.sign('sha256', datos, privateKey);\n"
+    ))
+    assert [(h.rule_id, h.line) for h in hallazgos] == [("crypto.pqc.ecdsa", 1)]
+
+
+def test_js_clave_ec_con_create_sign_es_ecdsa(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });\n"
+        "const firmador = crypto.createSign('SHA256');\n"
+    ))
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.ecdsa"]
+
+
+def test_js_clave_ec_sin_firmar_sigue_siendo_de_uso_indefinido(tmp_path):
+    hallazgos = _escanear_js(tmp_path, "crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });\n")
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.ec-keygen"]
+
+
+def test_js_firmar_en_un_comentario_no_cambia_el_uso(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });\n"
+        "// después: crypto.sign('sha256', datos, clave)\n"
+    ))
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.ec-keygen"]
+
+
+def test_js_firmar_no_convierte_en_ecdsa_una_clave_rsa(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "crypto.generateKeyPairSync('rsa', { modulusLength: 3072 });\n"
+        "crypto.sign('sha256', datos, clave);\n"
+    ))
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.rsa-keygen"]
+
+
 def test_js_detecta_ed25519_y_x25519(tmp_path):
     hallazgos = _escanear_js(tmp_path, (
         "const firma = crypto.generateKeyPairSync('ed25519');\n"
