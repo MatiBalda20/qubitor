@@ -48,15 +48,15 @@ class SqlScanStore:
                     fingerprint=fingerprint,
                     engine=finding.engine,
                     rule_id=finding.rule_id,
-                    title=finding.title,
+                    title=_clean(finding.title),
                     severity=finding.severity,
-                    file_path=finding.file_path,
+                    file_path=_clean(finding.file_path),
                     line=finding.line,
-                    snippet=finding.snippet,
-                    description=finding.description,
+                    snippet=_clean(finding.snippet),
+                    description=_clean(finding.description),
                     cwe=finding.cwe,
                     cve=finding.cve,
-                    metadata_=finding.metadata,
+                    metadata_=_clean(finding.metadata),
                     status=FindingStatus.OPEN,
                 )
                 for fingerprint, finding in result.findings.items()
@@ -65,7 +65,7 @@ class SqlScanStore:
             scan.commit_sha = commit_sha
             scan.risk_score = result.risk_score
             scan.grade = result.grade
-            scan.engine_errors = result.errors or None
+            scan.engine_errors = _clean(result.errors) or None
             scan.error = None
             scan.finished_at = _now()
 
@@ -74,7 +74,7 @@ class SqlScanStore:
             scan = _get_scan(session, scan_id)
             if scan is not None:
                 scan.status = ScanStatus.FAILED
-                scan.error = error
+                scan.error = _clean(error)
                 scan.finished_at = _now()
 
 
@@ -88,6 +88,21 @@ def _get_scan(session: Session, scan_id: str) -> Scan | None:
     if scan is None:
         logger.warning("El escaneo %s no existe en la base: no se guarda el resultado", scan_id)
     return scan
+
+
+def _clean(value):
+    """Quita el byte nulo, que Postgres no acepta en textos ni en JSONB.
+
+    Los textos salen del código del repo: un archivo con ese carácter no puede
+    hacer fallar el guardado de todo el escaneo.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {_clean(key): _clean(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clean(item) for item in value]
+    return value
 
 
 def _now() -> datetime:

@@ -158,16 +158,42 @@ def test_guardar_dos_veces_no_duplica_hallazgos(db, scan_id):
 
 
 @necesita_postgres
-def test_si_falla_al_guardar_no_quedan_hallazgos_a_medias(db, scan_id):
+def test_byte_nulo_de_un_repo_no_rompe_el_guardado(db, scan_id):
     from app.models.models import ScanStatus
     from app.worker.sql_store import SqlScanStore
 
-    # Un snippet con un byte nulo no entra en Postgres: falla a mitad del guardado.
-    resultado = _resultado(_finding(2), _finding(3, snippet="x\x00y"))
+    # Postgres no acepta el byte nulo en textos ni en JSONB: un archivo del repo
+    # con ese carácter no puede hacer fallar el escaneo entero.
+    hallazgo = _finding(3, snippet="x\x00y", title="t\x00", metadata={"valor": "a\x00b", "lista": ["\x00"]})
 
-    with pytest.raises(Exception):
-        SqlScanStore(db).save_result(scan_id, "a" * 40, resultado)
+    SqlScanStore(db).save_result(scan_id, "a" * 40, _resultado(hallazgo))
 
+    scan, [guardado] = _leer(db, scan_id)
+    assert scan.status is ScanStatus.COMPLETED
+    assert (guardado.snippet, guardado.title) == ("xy", "t")
+    assert guardado.metadata_ == {"valor": "ab", "lista": [""]}
+
+
+@necesita_postgres
+def test_si_falla_al_guardar_no_quedan_hallazgos_a_medias(db, scan_id, monkeypatch):
+    from sqlalchemy.orm import Session
+
+    from app.models.models import ScanStatus
+    from app.worker.sql_store import SqlScanStore
+
+    original = Session.add_all
+
+    def add_all_y_falla(self, instances):
+        original(self, instances)
+        self.flush()
+        raise RuntimeError("se cortó la conexión")
+
+    monkeypatch.setattr(Session, "add_all", add_all_y_falla)
+
+    with pytest.raises(RuntimeError):
+        SqlScanStore(db).save_result(scan_id, "a" * 40, _resultado(_finding(2), _finding(3)))
+
+    monkeypatch.undo()
     scan, hallazgos = _leer(db, scan_id)
     assert scan.status is ScanStatus.QUEUED
     assert hallazgos == []
