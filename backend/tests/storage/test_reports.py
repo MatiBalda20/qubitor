@@ -98,7 +98,15 @@ def test_guarda_el_reporte_y_el_cbom_como_descarga():
 
     assert archive_scan("scan1", "url", "sha", _resultado(), storage=ReportStorage(s3, "qubitor")) is True
 
-    assert set(s3.objetos) == {("qubitor", "reports/scan1/report.json"), ("qubitor", "reports/scan1/cbom.json")}
+    assert set(s3.objetos) == {
+        ("qubitor", "reports/scan1/report.json"),
+        ("qubitor", "reports/scan1/cbom.json"),
+        ("qubitor", "reports/scan1/report.pdf"),
+    }
+    pdf = s3.objetos[("qubitor", "reports/scan1/report.pdf")]
+    assert pdf["type"] == "application/pdf"
+    assert pdf["body"].startswith(b"%PDF")
+    assert pdf["disposition"] == 'attachment; filename="qubitor-scan1-report.pdf"'
     reporte = s3.objetos[("qubitor", "reports/scan1/report.json")]
     assert reporte["type"].startswith("application/json")
     assert reporte["disposition"] == 'attachment; filename="qubitor-scan1-report.json"'
@@ -107,6 +115,18 @@ def test_guarda_el_reporte_y_el_cbom_como_descarga():
     assert cbom["type"].startswith("application/vnd.cyclonedx+json")
     assert cbom["disposition"] == 'attachment; filename="qubitor-scan1-cbom.cdx.json"'
     assert json.loads(cbom["body"])["bomFormat"] == "CycloneDX"
+
+
+def test_si_falla_el_pdf_los_json_quedan_guardados(monkeypatch, caplog):
+    def explota(*args):
+        raise RuntimeError("sin fuentes")
+
+    monkeypatch.setattr("app.storage.reports.build_pdf", explota)
+    s3 = S3Falso()
+
+    assert archive_scan("scan1", "url", "sha", _resultado(), storage=ReportStorage(s3, "qubitor")) is True
+    assert set(s3.objetos) == {("qubitor", "reports/scan1/report.json"), ("qubitor", "reports/scan1/cbom.json")}
+    assert "no se pudo generar o guardar el PDF" in caplog.text
 
 
 def test_url_firmada_que_vence():

@@ -5,6 +5,7 @@ Al terminar un escaneo se guardan dos archivos JSON:
 - `reports/<scan_id>/report.json`: el resultado completo (Risk Score y hallazgos).
 - `reports/<scan_id>/cbom.json`: el inventario criptográfico (CBOM) en formato
   CycloneDX 1.6, solo los hallazgos del motor de criptografía.
+- `reports/<scan_id>/report.pdf`: el reporte para leer o compartir.
 
 El bucket es privado: la interfaz los descarga con URLs firmadas que vencen.
 Sin las variables `R2_*` no se guarda nada y el escaneo sigue igual, como el
@@ -22,15 +23,21 @@ from typing import Any, Literal, Protocol
 from app.engines.base import Finding, Severity
 from app.orchestrator.pipeline import ScanResult
 from app.storage.cyclonedx import build_cyclonedx
+from app.storage.pdf import build_pdf
 
 logger = logging.getLogger(__name__)
 
-ReportKind = Literal["report", "cbom"]
-REPORT_KINDS: tuple[ReportKind, ...] = ("report", "cbom")
+ReportKind = Literal["report", "cbom", "pdf"]
+REPORT_KINDS: tuple[ReportKind, ...] = ("report", "cbom", "pdf")
 
-# Tipo de contenido y nombre con el que se descarga cada archivo.
-_CONTENT_TYPES = {"report": "application/json", "cbom": "application/vnd.cyclonedx+json"}
-_FILE_NAMES = {"report": "report.json", "cbom": "cbom.cdx.json"}
+# Nombre en el bucket, tipo de contenido y nombre con el que se descarga cada archivo.
+_KEY_NAMES = {"report": "report.json", "cbom": "cbom.json", "pdf": "report.pdf"}
+_CONTENT_TYPES = {
+    "report": "application/json; charset=utf-8",
+    "cbom": "application/vnd.cyclonedx+json; charset=utf-8",
+    "pdf": "application/pdf",
+}
+_FILE_NAMES = {"report": "report.json", "cbom": "cbom.cdx.json", "pdf": "report.pdf"}
 
 # Lo que dura una URL firmada. Corto: alcanza para descargar, no para compartir.
 SIGNED_URL_SECONDS = 10 * 60
@@ -77,11 +84,14 @@ class ReportStorage:
         self.bucket = bucket
 
     def save(self, scan_id: str, kind: ReportKind, content: dict) -> None:
+        self.save_bytes(scan_id, kind, json.dumps(content, ensure_ascii=False, indent=2).encode("utf-8"))
+
+    def save_bytes(self, scan_id: str, kind: ReportKind, body: bytes) -> None:
         self.client.put_object(
             Bucket=self.bucket,
             Key=report_key(scan_id, kind),
-            Body=json.dumps(content, ensure_ascii=False, indent=2).encode("utf-8"),
-            ContentType=f"{_CONTENT_TYPES[kind]}; charset=utf-8",
+            Body=body,
+            ContentType=_CONTENT_TYPES[kind],
             # Al abrir la URL firmada el navegador descarga el archivo con este nombre.
             ContentDisposition=f'attachment; filename="qubitor-{scan_id}-{_FILE_NAMES[kind]}"',
         )
@@ -110,7 +120,7 @@ def report_key(scan_id: str, kind: ReportKind) -> str:
         raise ValueError(f"Id de escaneo inválido: {scan_id!r}")
     if kind not in REPORT_KINDS:
         raise ValueError(f"Tipo de reporte inválido: {kind!r}")
-    return f"reports/{scan_id}/{kind}.json"
+    return f"reports/{scan_id}/{_KEY_NAMES[kind]}"
 
 
 def get_report_storage() -> ReportStorage | None:
@@ -141,10 +151,11 @@ def get_report_storage() -> ReportStorage | None:
 
 def archive_scan(scan_id: str, repo_url: str, commit_sha: str, result: ScanResult,
                  storage: ReportStorage | None = None) -> bool:
-    """Guarda el reporte y el CBOM del escaneo. Devuelve True si se guardaron.
+    """Guarda el reporte, el CBOM y el PDF del escaneo. Devuelve True si se guardaron los JSON.
 
     No lanza excepciones: si el bucket falla, el escaneo ya está en la base y
-    no tiene que quedar como fallido por eso. Solo se registra en el log.
+    no tiene que quedar como fallido por eso. Solo se registra en el log. Si
+    falla solo el PDF, los JSON quedan guardados igual.
     """
     storage = storage or get_report_storage()
     if storage is None:
@@ -155,6 +166,10 @@ def archive_scan(scan_id: str, repo_url: str, commit_sha: str, result: ScanResul
     except Exception:
         logger.exception("Escaneo %s: no se pudo guardar el reporte en el bucket", scan_id)
         return False
+    try:
+        storage.save_bytes(scan_id, "pdf", build_pdf(scan_id, repo_url, commit_sha, result))
+    except Exception:
+        logger.exception("Escaneo %s: no se pudo generar o guardar el PDF", scan_id)
     return True
 
 
