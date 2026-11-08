@@ -54,7 +54,7 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Código / Arquitectura generada:** Detección con expresiones regulares (`JS_RULES`) sobre el código sin comentarios, reutilizando las mismas reglas que Python. Cubre `generateKeyPair(Sync)` (RSA, EC, DSA, DH), `createECDH`, `createDiffieHellman`, `createCipheriv` (AES por tamaño y ChaCha20) y `createHash` (inventario). Una función propia quita los comentarios `//` y `/* */` respetando los textos entre comillas y conservando los números de línea. El snippet se corta en el nombre del algoritmo para no incluir claves. Se generalizaron `_iter_files`, `_read_text` y `_make_finding` para los dos lenguajes. 9 tests nuevos (46 en total).
 - **Validación y Corrección Humana:** Revisé la explicación de cada pieza antes del commit (patrones de `JS_RULES`, quitado de comentarios y armado del snippet). Ejecuté la suite de tests (46 tests, todos pasan) y escaneé el repo de demo `qubitor-demo-vulnerable`: la falla plantada en `app/signing.js` aparece como `crypto.pqc.ec-keygen` en la línea correcta. Validé los casos negativos: comentarios `//` y `/* */` que mencionan funciones criptográficas, URLs con `//` dentro de textos, tipos de clave ya post-cuánticos (`ml-dsa-65`) y MD5, que corresponde al Módulo C. Verifiqué que el snippet no incluya la clave pasada a `createCipheriv`. Decidí usar expresiones regulares en lugar de un parser de JavaScript para no sumar dependencias al scan-worker, aceptando estas limitaciones para el MVP: no se resuelve de dónde viene cada nombre (una función propia llamada `createECDH` también se detectaría), no se cubre WebCrypto (`crypto.subtle`), y como `crypto.sign` no indica el algoritmo, la firma ECDSA de la demo se reporta como generación de clave de curva elíptica (el riesgo es el mismo).
 - **Responsable:** Valentina Pértile de la Vega
-- **PR:** _pendiente_
+- **PR:** #9
 
 
 
@@ -118,7 +118,7 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Código / Arquitectura generada:** `rule_id` pasa a ser `sca.osv.<id de la vulnerabilidad>` en `findings.py`. Test nuevo que pasa dos fallas del mismo paquete por `deduplicate`.
 - **Validación y Corrección Humana:** Validación ejecutada con Claude Code a pedido de la responsable. El test nuevo falla sin el arreglo y pasa con él; la suite da 147 tests OK y 3 saltados (2 por falta de Bandit en el entorno local y 1 que usa internet, ejecutado aparte contra OSV real y aprobado). Comparación contra OSV real sobre el repo de demo: el motor devuelve 14 hallazgos; antes del arreglo quedaban 2 tras deduplicar (Risk Score 85) y ahora quedan los 14 (9 de lodash y 5 de requests, Risk Score 49). Limitación conocida: las versiones corregidas se informan por vulnerabilidad, no por paquete; en lodash van de 4.17.5 a 4.18.0. Revisé el cambio en `findings.py` y el test.
 - **Responsable:** Valentina Pértile de la Vega
-- **PR:** _pendiente_
+- **PR:** #19
 
 ### [2026-11-06] Reglas de Criptografía Clásica y CryptoEngine
 
@@ -164,6 +164,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Correcciones tras la revisión de la PR #20:** Valentina encontró que encolar dos veces el mismo escaneo lo ejecutaba dos veces: se había supuesto que RQ rechaza un `job_id` repetido, sin comprobarlo, y el test solo encolaba una vez. Ahora cada escaneo se marca con `SET NX` en Redis (atómico) y, si ya estaba, se devuelve el trabajo existente; se agregaron tests que encolan dos veces. También se registró `CryptoEngine` (la PR #16 se mergeó antes que esta), se sumaron `sqlalchemy` y `psycopg` a `requirements.txt` para los modelos de la PR #18, y al resolver el conflicto con la PR #17 se mantuvo el código de la imagen como propiedad de root (solo lectura para el worker).
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(worker): API base, cola de escaneos y scan-worker
+
+### [2026-11-07] Puntaje CVSS en el motor SCA (engines/sca/cvss.py)
+
+- **Problema abordado:** OSV publica el vector CVSS pero no el puntaje, y la vista «Dependencias» tiene que mostrarlo. Además, sin la gravedad de GitHub, el motor asumía media aunque el vector permitiera calcularla.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), como parte del plan de las vistas del Módulo D.
+- **Código / Arquitectura generada:** `cvss.py` calcula el puntaje base de CVSS 3.0 y 3.1 con las fórmulas de la especificación, sin dependencias nuevas, y devuelve None para CVSS 4.0, CVSS 2 o vectores inválidos. `findings.py` guarda el puntaje en `metadata["cvss"]`, prefiere el vector 3.x cuando hay varios y, si GitHub no informa la gravedad, la toma del CVSS con la escala del equipo (`severity_source: "cvss"`).
+- **Validación y Corrección Humana:** Validación ejecutada con Claude Code. Los tests se escribieron antes que el código y comparan contra puntajes publicados por NVD (9,8, 9,9, 9,1, 7,5, 7,4 y 6,1), más casos de CVSS 4.0, CVSS 2 y vectores incompletos o inválidos; la suite completa da 171 tests OK y 3 saltados, y el test contra OSV real pasa. Sobre el repo de demo, 13 de las 14 vulnerabilidades tienen puntaje y los comparados con NVD coinciden; `CVE-2018-16487` de lodash no trae vector en OSV y queda sin puntaje. Limitación aceptada: CVSS 4.0 no se puntúa porque usa tablas en lugar de fórmulas. Revisé el cálculo en `cvss.py`, los cambios en `findings.py` y los tests.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #22
 
 ### [PLANTILLA — completar en próximas entradas]
 

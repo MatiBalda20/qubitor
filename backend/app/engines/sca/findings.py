@@ -3,6 +3,7 @@
 import re
 
 from app.engines.base import Finding, Severity
+from app.engines.sca.cvss import base_score
 from app.engines.sca.manifests import Dependency
 
 RULE_PREFIX = "sca.osv"
@@ -23,7 +24,9 @@ def has_severity(vuln: dict) -> bool:
 
 def vulnerability_to_finding(dep: Dependency, vuln: dict) -> Finding:
     fixed = fixed_version(vuln, dep)
-    severity = _github_severity(vuln)
+    vector = _cvss_vector(vuln)
+    cvss = base_score(vector) if vector else None
+    severity, severity_source = _severity(vuln, cvss)
     upgrade_command = _upgrade_command(dep, fixed)
 
     summary = vuln.get("summary")
@@ -43,9 +46,7 @@ def vulnerability_to_finding(dep: Dependency, vuln: dict) -> Finding:
         # Con el ID en la regla, cada falla de un paquete tiene su propio fingerprint.
         rule_id=f"{RULE_PREFIX}.{vuln.get('id')}",
         title=title,
-        # Sin gravedad de GitHub se asume media: hay una falla conocida, pero no
-        # se sabe cuán grave es. Queda indicado en metadata["severity_source"].
-        severity=severity or Severity.MEDIUM,
+        severity=severity,
         file_path=dep.file_path,
         line=dep.line,
         snippet=_snippet(dep),
@@ -60,8 +61,9 @@ def vulnerability_to_finding(dep: Dependency, vuln: dict) -> Finding:
             "upgrade_command": upgrade_command,
             "vuln_id": vuln.get("id"),
             "aliases": vuln.get("aliases") or [],
-            "cvss_vector": _cvss_vector(vuln),
-            "severity_source": "github" if severity else "desconocida",
+            "cvss": cvss,
+            "cvss_vector": vector,
+            "severity_source": severity_source,
         },
     )
 
@@ -96,15 +98,39 @@ def _github_severity(vuln: dict) -> Severity | None:
     return _GITHUB_SEVERITY.get(str(label).upper()) if label else None
 
 
+def _severity(vuln: dict, cvss: float | None) -> tuple[Severity, str]:
+    """Gravedad del hallazgo y de dónde sale: GitHub, el CVSS o ninguno."""
+    github = _github_severity(vuln)
+    if github is not None:
+        return github, "github"
+    if cvss is not None:
+        return _severity_from_cvss(cvss), "cvss"
+    # Sin datos se asume media: hay una falla conocida, pero no se sabe cuán grave es.
+    return Severity.MEDIUM, "desconocida"
+
+
+def _severity_from_cvss(score: float) -> Severity:
+    """Escala del equipo: crítica ≥ 9, alta ≥ 7, media ≥ 4 y baja por debajo."""
+    if score >= 9:
+        return Severity.CRITICAL
+    if score >= 7:
+        return Severity.HIGH
+    if score >= 4:
+        return Severity.MEDIUM
+    return Severity.LOW
+
+
 def _cve(vuln: dict) -> str | None:
     ids = [vuln.get("id") or "", *(vuln.get("aliases") or [])]
     return next((i for i in ids if i.startswith("CVE-")), None)
 
 
 def _cvss_vector(vuln: dict) -> str | None:
-    for entry in vuln.get("severity") or []:
-        if str(entry.get("type", "")).startswith("CVSS"):
-            return entry.get("score")
+    """El vector CVSS, prefiriendo el 3.x, que es el que se puede puntuar."""
+    vectors = {entry.get("type"): entry.get("score") for entry in vuln.get("severity") or []}
+    for kind in ("CVSS_V3", "CVSS_V4", "CVSS_V2"):
+        if vectors.get(kind):
+            return vectors[kind]
     return None
 
 
