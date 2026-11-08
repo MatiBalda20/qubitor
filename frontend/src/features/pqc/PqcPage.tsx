@@ -10,6 +10,8 @@ import { CbomTable } from './CbomTable'
 import { loadPqc, type PqcData } from './dataSource'
 import { ExposureCard } from './ExposureCard'
 import { MigrationRoadmap } from './MigrationRoadmap'
+import { MoscaCard } from './MoscaCard'
+import { atRiskIds, defaultMoscaParams, moscaAssessment, type MoscaParams } from './mosca'
 import { ReportDownloadButton } from './ReportDownloadButton'
 import { cryptoUsages, exposure, migrationRoadmap } from './quantum'
 
@@ -96,6 +98,9 @@ function PqcView({ data }: { data: PqcData }) {
   const usages = useMemo(() => cryptoUsages(findings), [findings])
   const summary = useMemo(() => exposure(usages), [usages])
   const steps = useMemo(() => migrationRoadmap(usages), [usages])
+  const [moscaParams, setMoscaParams] = useState<MoscaParams>(() => defaultMoscaParams())
+  const verdicts = useMemo(() => moscaAssessment(usages, moscaParams), [usages, moscaParams])
+  const atRisk = useMemo(() => atRiskIds(verdicts), [verdicts])
 
   return (
     <>
@@ -145,10 +150,13 @@ function PqcView({ data }: { data: PqcData }) {
         ) : (
           <>
             <div className="grid gap-5 xl:grid-cols-12">
-              <ExposureCard summary={summary} className="xl:col-span-5 xl:self-start" />
-              <MigrationRoadmap steps={steps} className="xl:col-span-7" />
+              <div className="space-y-5 xl:col-span-5 xl:self-start">
+                <ExposureCard summary={summary} />
+                <MoscaCard params={moscaParams} verdicts={verdicts} onChange={setMoscaParams} />
+              </div>
+              <MigrationRoadmap steps={steps} className="xl:col-span-7 xl:self-start" />
             </div>
-            <CbomTable usages={usages} />
+            <CbomTable usages={usages} atRisk={atRisk} />
           </>
         )}
       </div>

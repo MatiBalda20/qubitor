@@ -11,7 +11,7 @@ import type { FindingRecord, Severity } from '@/types/Finding'
 export type Threat = 'shor' | 'grover' | 'broken' | 'none'
 
 /** Para qué se usa un algoritmo asimétrico: define a qué estándar migrar. */
-type AsymmetricUse = 'exchange' | 'signature' | 'both'
+export type AsymmetricUse = 'exchange' | 'signature' | 'both'
 
 export interface CryptoUsage {
   finding: FindingRecord
@@ -180,6 +180,11 @@ function classify(finding: FindingRecord): { algorithm: string; threat: Threat }
   }
   const algorithm = finding.metadata.algorithm
   return { algorithm: typeof algorithm === 'string' ? algorithm : finding.title, threat: 'none' }
+}
+
+/** Para qué se usa un algoritmo que rompe Shor; null si no lo rompe Shor. */
+export function shorUse(usage: CryptoUsage): AsymmetricUse | null {
+  return usage.threat === 'shor' ? (SHOR_RULES[usage.finding.rule_id]?.use ?? 'both') : null
 }
 
 const CERT_NOUN: Record<string, string> = {
