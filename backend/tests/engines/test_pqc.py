@@ -120,6 +120,37 @@ def test_detecta_intercambio_ecdh(tmp_path):
     assert [h.rule_id for h in hallazgos] == ["crypto.pqc.ecdh"]
 
 
+def test_detecta_firmas_ed25519_y_ed448(tmp_path):
+    hallazgos = _escanear(tmp_path, (
+        "from cryptography.hazmat.primitives.asymmetric import ed25519\n"
+        "from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey\n"
+        "a = ed25519.Ed25519PrivateKey.generate()\n"
+        "b = Ed448PrivateKey.generate()\n"
+    ))
+
+    assert [(h.rule_id, h.line) for h in hallazgos] == [("crypto.pqc.eddsa", 3), ("crypto.pqc.eddsa", 4)]
+    assert all(h.severity == Severity.MEDIUM for h in hallazgos)
+
+
+def test_x25519_y_x448_son_intercambio_ecdh(tmp_path):
+    hallazgos = _escanear(tmp_path, (
+        "from cryptography.hazmat.primitives.asymmetric import x25519, x448\n"
+        "a = x25519.X25519PrivateKey.generate()\n"
+        "b = x448.X448PrivateKey.generate()\n"
+    ))
+
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.ecdh", "crypto.pqc.ecdh"]
+
+
+def test_cargar_una_clave_ed25519_sin_generarla_no_es_hallazgo(tmp_path):
+    hallazgos = _escanear(tmp_path, (
+        "from cryptography.hazmat.primitives.asymmetric import ed25519\n"
+        "clave = ed25519.Ed25519PublicKey.from_public_bytes(datos)\n"
+    ))
+
+    assert hallazgos == []
+
+
 def test_nombrar_una_curva_sin_usarla_no_es_hallazgo(tmp_path):
     hallazgos = _escanear(tmp_path, (
         "from cryptography.hazmat.primitives.asymmetric import ec\n"
@@ -404,6 +435,14 @@ def test_js_detecta_ecdh_y_diffie_hellman(tmp_path):
 def test_js_tipo_de_clave_sin_riesgo_cuantico_conocido_no_es_hallazgo(tmp_path):
     hallazgos = _escanear_js(tmp_path, "crypto.generateKeyPairSync('ml-dsa-65');\n")
     assert hallazgos == []
+
+
+def test_js_detecta_ed25519_y_x25519(tmp_path):
+    hallazgos = _escanear_js(tmp_path, (
+        "const firma = crypto.generateKeyPairSync('ed25519');\n"
+        "const acuerdo = crypto.generateKeyPairSync('x25519');\n"
+    ))
+    assert [h.rule_id for h in hallazgos] == ["crypto.pqc.eddsa", "crypto.pqc.ecdh"]
 
 
 def test_js_aes_128_y_aes_256(tmp_path):
