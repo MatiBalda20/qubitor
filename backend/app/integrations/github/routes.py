@@ -6,8 +6,6 @@ en `repositories` de la organización del usuario; el primer escaneo se lanza
 con el endpoint existente `POST /repositories/{id}/scans` (Módulo A).
 """
 
-import os
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -18,6 +16,7 @@ from app.api.schemas import RepositoryOut, repository_out
 from app.integrations.github.clerk import get_github_token
 from app.integrations.github.client import GitHubClient, GitHubRepo, is_valid_full_name
 from app.integrations.github.errors import GitHubError
+from app.integrations.github.settings import private_repos_enabled
 from app.models.database import get_db
 from app.models.models import Repository, User
 from app.worker.clone import MAX_REPO_BYTES
@@ -48,11 +47,6 @@ class GitHubRepoPageOut(BaseModel):
 
 class ConnectGitHubRepoIn(BaseModel):
     full_name: str = Field(max_length=201)
-
-
-def private_repos_enabled() -> bool:
-    """Los repos privados se habilitan a mano: el worker necesita CLERK_SECRET_KEY para clonarlos."""
-    return os.getenv("GITHUB_PRIVATE_REPOS", "").lower() == "true"
 
 
 def get_github_client(user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)) -> GitHubClient:

@@ -10,6 +10,7 @@ from app.engines.crypto import CryptoEngine
 from app.engines.sast import SastEngine
 from app.engines.sca import ScaEngine
 from app.engines.secrets.engine import SecretsEngine
+from app.integrations.github.tokens import clone_token_for_scan
 from app.orchestrator.pipeline import ScanResult, analyze_repository
 from app.storage import archive_scan
 from app.worker.clone import CloneRejected, clone_repository, remove_tree
@@ -32,7 +33,9 @@ def run_scan(scan_id: str, repo_url: str) -> dict:
     workdir = tempfile.mkdtemp(prefix=f"scan-{scan_id}-", dir=os.getenv("REPOS_DIR"))
     try:
         repo_path = os.path.join(workdir, "repo")
-        commit_sha = clone_repository(repo_url, repo_path)
+        # Repos privados (Módulo E): el token se pide a Clerk recién acá y no se guarda.
+        token = clone_token_for_scan(scan_id)
+        commit_sha = clone_repository(repo_url, repo_path, token=token) if token else clone_repository(repo_url, repo_path)
         result = analyze_repository(repo_path, default_engines())
         if result.failed:
             store.mark_failed(scan_id, "Fallaron todos los motores")
