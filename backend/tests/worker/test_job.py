@@ -54,6 +54,8 @@ class MotorRoto(Engine):
 def store(monkeypatch):
     store = StoreDePrueba()
     monkeypatch.setattr(job_module, "get_store", lambda: store)
+    # Aunque el .env tenga las variables de R2, los tests no suben nada al bucket.
+    monkeypatch.setattr(job_module, "archive_scan", lambda *args: False)
     return store
 
 
@@ -83,6 +85,30 @@ def test_escaneo_completo(store, clones, monkeypatch):
     assert resumen["findings"] == 1
     assert resumen["risk_score"] == 95
     assert resumen["grade"] == "A"
+
+
+def test_guarda_el_reporte_en_el_bucket_despues_de_guardar_el_escaneo(store, clones, monkeypatch):
+    monkeypatch.setattr(job_module, "default_engines", lambda: [MotorFijo()])
+    monkeypatch.setattr(
+        job_module, "archive_scan",
+        lambda scan_id, repo_url, commit_sha, result: store.eventos.append(
+            ("archived", scan_id, repo_url, commit_sha, len(result.findings))
+        ),
+    )
+
+    job_module.run_scan("abc", URL)
+
+    assert store.eventos[-2:] == [("saved", "abc", "a" * 40, 1), ("archived", "abc", URL, "a" * 40, 1)]
+
+
+def test_si_el_escaneo_falla_no_guarda_reporte(store, clones, monkeypatch):
+    archivados = []
+    monkeypatch.setattr(job_module, "default_engines", lambda: [MotorRoto()])
+    monkeypatch.setattr(job_module, "archive_scan", lambda *args: archivados.append(args))
+
+    job_module.run_scan("abc", URL)
+
+    assert archivados == []
 
 
 def test_siempre_borra_el_clon(store, clones, monkeypatch, tmp_path):
