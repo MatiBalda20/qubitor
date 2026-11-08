@@ -3,9 +3,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes import router
 from app.config import cors_origins
 
 app = FastAPI(title="Qubitor API")
+app.include_router(router)
 
 app.add_middleware(
     CORSMiddleware,
