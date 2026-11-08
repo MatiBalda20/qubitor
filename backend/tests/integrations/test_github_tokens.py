@@ -41,6 +41,7 @@ def db(monkeypatch):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
+    import app.models.models  # noqa: F401 (registra las tablas en Base.metadata)
     from app.models.database import Base
 
     monkeypatch.setenv("GITHUB_PRIVATE_REPOS", "true")
