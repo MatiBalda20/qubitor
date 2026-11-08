@@ -62,6 +62,23 @@ def test_get_vuln_pide_el_detalle_por_id():
     assert cliente.pedidos[0][:2] == ("GET", "https://api.osv.dev/v1/vulns/GHSA-x84v-xcm2-53pg")
 
 
+class OsvPorId(OsvClient):
+    """Responde el detalle según el id pedido, sin importar el orden en que lleguen los hilos."""
+
+    def _request(self, method, url, body=None):
+        return {"id": url.rsplit("/", 1)[1]}
+
+
+def test_get_vulns_devuelve_cada_detalle_con_su_id():
+    ids = [f"GHSA-{i}" for i in range(20)]
+
+    assert OsvPorId().get_vulns(ids) == {i: {"id": i} for i in ids}
+
+
+def test_get_vulns_sin_ids_no_consulta():
+    assert OsvDePrueba([]).get_vulns([]) == {}
+
+
 def test_sin_conexion_se_convierte_en_osv_error(monkeypatch):
     def sin_internet(*args, **kwargs):
         raise URLError("sin conexión")
