@@ -96,7 +96,8 @@ def repository_out(repo: Repository) -> RepositoryOut:
     )
 
 
-def scan_out(scan: Scan) -> ScanOut:
+def scan_out(scan: Scan, live: tuple[str | None, int | None] = (None, None)) -> ScanOut:
+    """`live` es la etapa y el porcentaje que informa el worker mientras el escaneo corre."""
     duration = None
     if scan.started_at and scan.finished_at:
         duration = round((scan.finished_at - scan.started_at).total_seconds(), 1)
@@ -105,9 +106,8 @@ def scan_out(scan: Scan) -> ScanOut:
         repository_id=str(scan.repository_id),
         status=scan.status,
         engines=ENGINE_NAMES,
-        # El worker todavía no informa en qué etapa está: solo se sabe al terminar.
-        progress=100 if scan.status == ScanStatus.COMPLETED else None,
-        stage=None,
+        progress=100 if scan.status == ScanStatus.COMPLETED else live[1],
+        stage=live[0] if scan.status == ScanStatus.RUNNING else None,
         commit_sha=scan.commit_sha,
         created_at=scan.created_at,
         # El frontend necesita una fecha aunque el escaneo siga en cola.

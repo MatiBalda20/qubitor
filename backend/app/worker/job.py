@@ -15,6 +15,7 @@ from app.integrations.github.tokens import clone_token_for_scan
 from app.orchestrator.pipeline import ScanResult, analyze_repository
 from app.storage import archive_scan
 from app.worker.clone import CloneRejected, clone_repository, remove_tree
+from app.worker.progress import report_stage
 from app.worker.store import get_store
 
 
@@ -35,14 +36,18 @@ def run_scan(scan_id: str, repo_url: str) -> dict:
     try:
         repo_path = os.path.join(workdir, "repo")
         # Repos privados (Módulo E): el token se pide a Clerk recién acá y no se guarda.
+        report_stage("clone")
         token = clone_token_for_scan(scan_id)
         commit_sha = clone_repository(repo_url, repo_path, token=token) if token else clone_repository(repo_url, repo_path)
-        result = analyze_repository(repo_path, default_engines())
+        result = analyze_repository(repo_path, default_engines(), on_stage=report_stage)
         if result.failed:
             store.mark_failed(scan_id, "Fallaron todos los motores")
             return _summary("failed", result=result)
         # Triage con Gemini y resumen ejecutivo (Módulo E). No lanza: si falla, se guarda sin triage.
+        # También recalcula el Risk Score, por eso la etapa «score» queda incluida en esta.
+        report_stage("triage")
         result = apply_ai(scan_id, result)
+        report_stage("persist")
         store.save_result(scan_id, commit_sha, result)
         # Reporte y CBOM en R2 (Módulo D). Si el bucket falla no lanza: el escaneo ya quedó guardado.
         archive_scan(scan_id, repo_url, commit_sha, result)

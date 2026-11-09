@@ -270,6 +270,16 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Correcciones de la revisión antes del PR:** Postgres rechaza el byte nulo en textos y JSONB, así que un archivo del repo con ese carácter hacía fallar el guardado de todo el escaneo (y se reintentaba en vano); se reprodujo con un test y ahora se quita antes de guardar. En `.env.example`, `DATABASE_URL` quedó comentada: con el valor de ejemplo el worker intentaba conectarse a una base inexistente.
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(worker): guardar el escaneo y sus hallazgos en Postgres
+
+### [2026-11-08] Progreso del escaneo por etapa
+
+- **Problema abordado:** La barra de progreso del dashboard (`ScanProgress`, Módulo B) consulta `GET /scans/{id}` cada 1,5 s y espera `stage` y `progress`, pero el worker no informaba en qué etapa estaba: la barra mostraba «en curso» sin porcentaje.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** `app/worker/progress.py`: `report_stage` guarda la etapa y su porcentaje en los metadatos del trabajo de RQ, y `read_progress` los lee. `analyze_repository` recibe un `on_stage` opcional y avisa motores y normalización; el job avisa clonado, triage (antes de `apply_ai`, que también recalcula el score) y guardado. `GET /scans/{id}` consulta Redis solo si el escaneo está en curso. Las etapas son las mismas que `SCAN_STAGES` del frontend. La conexión a Redis se reutiliza por proceso. 10 tests nuevos.
+- **Validación y Corrección Humana:** Se guardó en Redis y no en la base porque son datos de vida corta que cambian varias veces por escaneo, y así no hace falta tocar los modelos ni la migración. Un test recorre un escaneo real en la cola (Redis falso) y comprueba lo que la API lee en cada etapa. Si Redis no responde o el trabajo venció, el escaneo sigue y la barra queda sin porcentaje. Sin conexión reutilizada, cada consulta del frontend abría una conexión TLS nueva con Upstash.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(worker): progreso del escaneo por etapa
+
 ### [2026-11-07] Vista «Preparación post-cuántica» (frontend/src/features/pqc)
 
 - **Problema abordado:** Mostrar qué criptografía usa el repositorio (CBOM), qué parte rompería una computadora cuántica y en qué orden migrar a ML-KEM (FIPS 203) y ML-DSA (FIPS 204). Los hallazgos de `pqc.py` y de `classic.py` llegan sueltos: hay que clasificarlos por amenaza y agruparlos en pasos de migración.
