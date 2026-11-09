@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 from cryptography.x509.oid import NameOID
 
@@ -156,6 +157,38 @@ def test_archivos_rotos_no_rompen_el_escaneo(tmp_path, contenido):
 
 def test_clave_cifrada_con_contrasena_se_saltea(tmp_path):
     assert _escanear(tmp_path, {"cifrada.key": _pem_privada(_clave_rsa(), cifrada=True)}) == []
+
+
+def _keystore(clave, certificado_pem=None, contrasena=None):
+    certificado = x509.load_pem_x509_certificate(certificado_pem) if certificado_pem else None
+    cifrado = serialization.BestAvailableEncryption(contrasena) if contrasena else serialization.NoEncryption()
+    return pkcs12.serialize_key_and_certificates(b"demo", clave, certificado, None, cifrado)
+
+
+def test_keystore_pkcs12_con_certificado(tmp_path):
+    clave = _clave_rsa(1024)
+
+    hallazgos = _escanear(tmp_path, {"config/keystore.p12": _keystore(clave, _certificado(clave))})
+
+    assert _reglas(hallazgos) == ["crypto.pqc.cert-weak-key"]
+    assert (hallazgos[0].file_path, hallazgos[0].line) == ("config/keystore.p12", 1)
+    assert hallazgos[0].metadata["kind"] == "certificate"
+    assert hallazgos[0].metadata["subject"] == "CN=demo.qubitor.invalid"
+
+
+def test_keystore_sin_certificado_reporta_la_clave(tmp_path):
+    hallazgos = _escanear(tmp_path, {"cliente.pfx": _keystore(ec.generate_private_key(ec.SECP256R1()))})
+
+    assert _reglas(hallazgos) == ["crypto.pqc.cert-quantum-vulnerable"]
+    assert hallazgos[0].metadata["kind"] == "private_key"
+    assert hallazgos[0].metadata["algorithm"] == "EC secp256r1"
+
+
+def test_keystore_con_contrasena_se_saltea(tmp_path):
+    clave = _clave_rsa()
+    contenido = _keystore(clave, _certificado(clave), contrasena=b"clave-falsa")
+
+    assert _escanear(tmp_path, {"keystore.p12": contenido}) == []
 
 
 def test_ignora_otras_extensiones_y_carpetas_de_dependencias(tmp_path):
