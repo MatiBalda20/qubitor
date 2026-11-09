@@ -468,6 +468,20 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #29 (se mergeó a la rama del #24 cuando esa ya estaba en `main`; llega a `main` con el #37)
 
+### [2026-11-08] Worker de keep-alive para Render y workflow de CI (Módulo B)
+
+- **Problema abordado:** La API en Render (plan free) se apaga tras 15 minutos sin tráfico y el primer pedido después tarda cerca de un minuto. Además, el repo no tenía CI, y `CONTRIBUTING.md` exige lint, build y tests en verde antes de mergear.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5). Le pasé las tareas con los límites: solo tocar `infra/worker-keepalive/`, `.github/workflows/ci.yml` y este archivo; URLs en `[vars]` y no en el código; el cron `*/10 0-1,11-23 * * *`; sin secretos; y que no despliegue ni haga push.
+- **Código / Arquitectura generada:**
+  - `infra/worker-keepalive/`: Cloudflare Worker con un handler `scheduled` que hace `GET /health` a cada URL de `TARGETS` en paralelo, con timeout (`TIMEOUT_MS`, 30 s por defecto). Loguea una línea por URL y no corta si una falla. Sin rutas HTTP (`workers_dev = false`), con Workers Logs activado y un README para desplegarlo y ver los logs.
+  - `.github/workflows/ci.yml`: job de frontend (Node 22 con caché de npm, `npm ci`, `lint`, `build`) y de backend (Python 3.11 con caché de pip, `pytest -q`). Corre en `pull_request` y en push a `main` y `develop`, con `permissions: contents: read`. `concurrency` cancela las corridas viejas de un PR, pero no las de `main`/`develop`.
+- **Validación y Corrección Humana:**
+  - Worker: `tsc --noEmit` y `wrangler deploy --dry-run` sin errores. Lo probé con `wrangler dev --test-scheduled`: el disparo del cron devolvió `200` de `https://qubitor-api.onrender.com/health`.
+  - CI en local: `npm ci`, `npm run lint` y `npm run build` sin errores. `pytest -q` (Python 3.12 en Windows, porque no tengo 3.11): 459 pasan y 115 se saltean. Fallan 3 tests de symlinks de `test_pqc.py` y `test_sca_manifests.py`, porque Windows pide un privilegio para crear enlaces; en Linux no pasa. Un cuarto test (`test_js_firmar_en_un_comentario_no_cambia_el_uso`) solo falla en Windows sin `PYTHONUTF8=1`, porque el archivo de prueba se escribe con la codificación del sistema. No se tocaron esos tests (son de otro módulo). La confirmación final es la primera corrida en GitHub.
+  - Corrección de la cuenta de horas: las 750 h free de Render son por workspace y se comparten entre todos los web services. Con la ventana elegida, un servicio usa ~465 h/mes, pero dos usarían ~930 h. Quedó documentado en `wrangler.toml` que, si se suma el scan-worker, hay que achicar la ventana a ~12 h/día.
+- **Responsable:** Matías Balda
+- **PR:** #(pendiente)
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
