@@ -55,4 +55,5 @@ jobs:
             backend/requirements-dev.txt
 
       - run: pip install -r requirements-dev.txt
-      - run: pytest -q
+      # `python -m` agrega backend/ al sys.path para que los tests importen `app`.
+      - run: python -m pytest -q
