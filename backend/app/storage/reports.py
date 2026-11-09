@@ -143,7 +143,8 @@ def get_report_storage() -> ReportStorage | None:
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        region_name="auto",
+        # R2 usa "auto"; otro servicio S3-compatible (Supabase Storage, por ejemplo) pide su región.
+        region_name=os.getenv("R2_REGION") or "auto",
         config=Config(signature_version="s3v4", retries={"max_attempts": 3}),
     )
     return ReportStorage(client, bucket)
