@@ -1,0 +1,23 @@
+// Worker de webhooks de GitHub (Módulo E). Ver README.md antes de desplegar.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "qubitor-webhook-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-08",
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 }
+  },
+  // Entregas ya procesadas (X-GitHub-Delivery), para no lanzar dos escaneos por el mismo push.
+  // Crear con `npx wrangler kv namespace create DELIVERIES` y reemplazar el id.
+  "kv_namespaces": [
+    { "binding": "DELIVERIES", "id": "reemplazar-por-el-id-del-namespace" }
+  ],
+  "vars": {
+    // URL pública de la API de Qubitor en Render, sin barra final.
+    "QUBITOR_API_URL": "https://qubitor-api.onrender.com"
+  }
+  // Secretos (nunca en este archivo): `npx wrangler secret put GITHUB_WEBHOOK_SECRET`
+  // y `npx wrangler secret put INTERNAL_WEBHOOK_SECRET`. En local, en .dev.vars.
+}

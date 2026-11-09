@@ -1,0 +1,5 @@
+# Copiar a .dev.vars para probar en local con `npm run dev`. Nunca commitear valores reales.
+# Mismo secreto que en GitHub > Settings > Webhooks > Secret.
+GITHUB_WEBHOOK_SECRET=reemplazar-por-un-secreto-largo-y-aleatorio
+# Mismo valor que INTERNAL_WEBHOOK_SECRET en la API (minimo 32 caracteres).
+INTERNAL_WEBHOOK_SECRET=reemplazar-por-otro-secreto-de-al-menos-32-caracteres

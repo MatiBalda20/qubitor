@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+# Secretos en local: nunca se commitean.
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
