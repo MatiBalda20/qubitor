@@ -89,7 +89,7 @@ class CachedOsvClient:
     def query_batch(self, dependencies: list[Dependency]) -> list[list[str]]:
         keys = [query_key(dep) for dep in dependencies]
         cached = self._read(keys, _parse_ids)
-        missing = [dep for dep, key in zip(dependencies, keys) if key not in cached]
+        missing = [dep for dep, key in zip(dependencies, keys, strict=True) if key not in cached]
         if missing:
             fresh = self.client.query_batch(missing)
             new = {query_key(dep): ids for dep, ids in zip(missing, fresh, strict=True)}
