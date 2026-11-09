@@ -1,6 +1,8 @@
-"""Reportes de cada escaneo en un bucket S3-compatible (Cloudflare R2) (Módulo D).
+"""Reportes de cada escaneo en un bucket S3-compatible (Módulo D).
 
-Al terminar un escaneo se guardan dos archivos JSON:
+El bucket puede ser Cloudflare R2 o cualquier otro servicio S3-compatible,
+como Supabase Storage (ver `get_report_storage`). Al terminar un escaneo se
+guardan tres archivos:
 
 - `reports/<scan_id>/report.json`: el resultado completo (Risk Score y hallazgos).
 - `reports/<scan_id>/cbom.json`: el inventario criptográfico (CBOM) en formato
@@ -17,8 +19,9 @@ import logging
 import os
 import re
 from collections import Counter
+from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, NamedTuple, Protocol
 
 from app.engines.base import Finding, Severity
 from app.orchestrator.pipeline import ScanResult
@@ -30,14 +33,19 @@ logger = logging.getLogger(__name__)
 ReportKind = Literal["report", "cbom", "pdf"]
 REPORT_KINDS: tuple[ReportKind, ...] = ("report", "cbom", "pdf")
 
-# Nombre en el bucket, tipo de contenido y nombre con el que se descarga cada archivo.
-_KEY_NAMES = {"report": "report.json", "cbom": "cbom.json", "pdf": "report.pdf"}
-_CONTENT_TYPES = {
-    "report": "application/json; charset=utf-8",
-    "cbom": "application/vnd.cyclonedx+json; charset=utf-8",
-    "pdf": "application/pdf",
+
+
+class _ReportFile(NamedTuple):
+    key_name: str  # nombre en el bucket
+    content_type: str
+    download_name: str  # nombre con el que lo guarda el navegador
+
+
+_FILES: dict[ReportKind, _ReportFile] = {
+    "report": _ReportFile("report.json", "application/json; charset=utf-8", "report.json"),
+    "cbom": _ReportFile("cbom.json", "application/vnd.cyclonedx+json; charset=utf-8", "cbom.cdx.json"),
+    "pdf": _ReportFile("report.pdf", "application/pdf", "report.pdf"),
 }
-_FILE_NAMES = {"report": "report.json", "cbom": "cbom.cdx.json", "pdf": "report.pdf"}
 
 # Lo que dura una URL firmada. Corto: alcanza para descargar, no para compartir.
 SIGNED_URL_SECONDS = 10 * 60
@@ -91,9 +99,9 @@ class ReportStorage:
             Bucket=self.bucket,
             Key=report_key(scan_id, kind),
             Body=body,
-            ContentType=_CONTENT_TYPES[kind],
+            ContentType=_FILES[kind].content_type,
             # Al abrir la URL firmada el navegador descarga el archivo con este nombre.
-            ContentDisposition=f'attachment; filename="qubitor-{scan_id}-{_FILE_NAMES[kind]}"',
+            ContentDisposition=f'attachment; filename="qubitor-{scan_id}-{_FILES[kind].download_name}"',
         )
 
     def signed_url(self, scan_id: str, kind: ReportKind, expires: int = SIGNED_URL_SECONDS) -> str | None:
@@ -120,7 +128,7 @@ def report_key(scan_id: str, kind: ReportKind) -> str:
         raise ValueError(f"Id de escaneo inválido: {scan_id!r}")
     if kind not in REPORT_KINDS:
         raise ValueError(f"Tipo de reporte inválido: {kind!r}")
-    return f"reports/{scan_id}/{_KEY_NAMES[kind]}"
+    return f"reports/{scan_id}/{_FILES[kind].key_name}"
 
 
 def get_report_storage() -> ReportStorage | None:
@@ -175,20 +183,7 @@ def archive_scan(scan_id: str, repo_url: str, commit_sha: str, result: ScanResul
 
 
 def _finding_dict(fp: str, finding: Finding) -> dict:
-    return {
-        "fingerprint": fp,
-        "engine": finding.engine,
-        "rule_id": finding.rule_id,
-        "title": finding.title,
-        "severity": finding.severity.value,
-        "file_path": finding.file_path,
-        "line": finding.line,
-        "snippet": finding.snippet,
-        "description": finding.description,
-        "cwe": finding.cwe,
-        "cve": finding.cve,
-        "metadata": finding.metadata,
-    }
+    return {"fingerprint": fp, **asdict(finding), "severity": finding.severity.value}
 
 
 def _status_code(error: Exception) -> int | None:
