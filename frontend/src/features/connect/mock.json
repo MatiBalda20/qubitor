@@ -1,0 +1,94 @@
+{
+  "pages": [
+    {
+      "items": [
+        {
+          "full_name": "qubitor-org/qubitor-demo-vulnerable",
+          "url": "https://github.com/qubitor-org/qubitor-demo-vulnerable",
+          "private": false,
+          "description": "Repo de demo con vulnerabilidades plantadas para probar los cuatro motores.",
+          "default_branch": "main",
+          "size_bytes": 184320,
+          "updated_at": "2026-11-08T12:40:00Z",
+          "archived": false,
+          "connected": true,
+          "connectable": true,
+          "reason": null
+        },
+        {
+          "full_name": "qubitor-org/api-pagos",
+          "url": "https://github.com/qubitor-org/api-pagos",
+          "private": false,
+          "description": "Microservicio de pagos en FastAPI.",
+          "default_branch": "main",
+          "size_bytes": 2457600,
+          "updated_at": "2026-11-07T18:05:00Z",
+          "archived": false,
+          "connected": false,
+          "connectable": true,
+          "reason": null
+        },
+        {
+          "full_name": "qubitor-org/panel-administracion",
+          "url": "https://github.com/qubitor-org/panel-administracion",
+          "private": true,
+          "description": "Panel interno de administración.",
+          "default_branch": "develop",
+          "size_bytes": 9830400,
+          "updated_at": "2026-11-06T09:30:00Z",
+          "archived": false,
+          "connected": false,
+          "connectable": false,
+          "reason": "Los repositorios privados todavía no están habilitados en Qubitor"
+        },
+        {
+          "full_name": "qubitor-org/landing",
+          "url": "https://github.com/qubitor-org/landing",
+          "private": false,
+          "description": "Sitio institucional en React.",
+          "default_branch": "main",
+          "size_bytes": 1228800,
+          "updated_at": "2026-11-02T15:20:00Z",
+          "archived": false,
+          "connected": false,
+          "connectable": true,
+          "reason": null
+        }
+      ],
+      "page": 1,
+      "has_next": true
+    },
+    {
+      "items": [
+        {
+          "full_name": "qubitor-org/dataset-imagenes",
+          "url": "https://github.com/qubitor-org/dataset-imagenes",
+          "private": false,
+          "description": "Imágenes de entrenamiento del modelo de clasificación.",
+          "default_branch": "main",
+          "size_bytes": 734003200,
+          "updated_at": "2026-10-20T11:00:00Z",
+          "archived": false,
+          "connected": false,
+          "connectable": false,
+          "reason": "El repositorio supera el límite de 50 MB"
+        },
+        {
+          "full_name": "qubitor-org/scripts-legacy",
+          "url": "https://github.com/qubitor-org/scripts-legacy",
+          "private": false,
+          "description": null,
+          "default_branch": "master",
+          "size_bytes": 81920,
+          "updated_at": "2025-03-14T08:00:00Z",
+          "archived": true,
+          "connected": false,
+          "connectable": true,
+          "reason": null
+        }
+      ],
+      "page": 2,
+      "has_next": false
+    }
+  ]
+}
