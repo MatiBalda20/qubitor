@@ -9,3 +9,5 @@ psycopg[binary]>=3.1,<4
 boto3>=1.35,<2
 pyjwt[crypto]>=2.8,<3
 google-genai>=2.30.1,<3
+cryptography>=43,<47
+reportlab>=4.2,<5
