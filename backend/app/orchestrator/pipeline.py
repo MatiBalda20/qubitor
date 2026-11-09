@@ -7,7 +7,7 @@ normalización y el score) y la persistencia los coordina el scan-worker.
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.engines.base import Engine, Finding
 from app.orchestrator.normalize import deduplicate
@@ -23,6 +23,9 @@ class ScanResult:
     grade: str
     duration_seconds: float
     engine_count: int
+    # Módulo E: evaluación de la IA por fingerprint y resumen ejecutivo. Vacíos sin triage.
+    triage: dict = field(default_factory=dict)
+    summary: dict | None = None
 
     @property
     def failed(self) -> bool:
@@ -33,14 +36,17 @@ class ScanResult:
 def analyze_repository(
     repo_path: str, engines: list[Engine], on_stage: Callable[[str], None] | None = None
 ) -> ScanResult:
-    """Corre los motores, normaliza y calcula el score. `on_stage` recibe cada etapa al empezar."""
+    """Corre los motores, normaliza y calcula el score. `on_stage` recibe cada etapa al empezar.
+
+    No avisa «score»: el scan-worker lo recalcula después del triage (`apply_ai`),
+    así que el score final y el triage los informa el job.
+    """
     report = on_stage or (lambda stage: None)
     start = time.monotonic()
     report("engines")
     engines_result = run_engines(engines, repo_path)
     report("normalize")
     findings = deduplicate(engines_result.findings)
-    report("score")
     # Al terminar el escaneo todos los hallazgos están abiertos y sin triage.
     score = risk_score(finding.severity for finding in findings.values())
     return ScanResult(

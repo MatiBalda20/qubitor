@@ -22,7 +22,7 @@ def test_las_etapas_son_las_del_frontend_y_el_porcentaje_avanza():
 def test_el_pipeline_avisa_cada_etapa_en_orden(tmp_path):
     etapas = []
     analyze_repository(str(tmp_path), [], on_stage=etapas.append)
-    assert etapas == ["engines", "normalize", "score"]
+    assert etapas == ["engines", "normalize"]
 
 
 def test_fuera_de_un_trabajo_no_hace_nada():
@@ -77,10 +77,12 @@ def test_el_worker_informa_las_etapas_y_la_api_las_lee(redis, monkeypatch, tmp_p
     monkeypatch.setattr(job_module, "clone_repository", clon_falso)
     monkeypatch.setattr(job_module, "default_engines", lambda: [])
     monkeypatch.setattr(job_module, "archive_scan", lambda *args: False)
+    monkeypatch.setattr(job_module, "clone_token_for_scan", lambda scan_id: None)
+    monkeypatch.setattr(job_module, "apply_ai", lambda scan_id, result: result)
     monkeypatch.setattr(job_module.tempfile, "mkdtemp", lambda **kwargs: str(tmp_path))
     monkeypatch.setattr(job_module, "remove_tree", lambda path: None)
 
     enqueue_scan("abc", "https://github.com/a/b", connection=redis)
     _NoForkWorker([QUEUE_NAME], connection=redis, serializer=JSONSerializer).work(burst=True, with_scheduler=False)
 
-    assert leidas == [(stage, STAGE_PROGRESS[stage]) for stage in ["clone", "engines", "normalize", "score", "persist"]]
+    assert leidas == [(stage, STAGE_PROGRESS[stage]) for stage in ["clone", "engines", "normalize", "triage", "persist"]]

@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Skeleton } from '@/components/Loader'
 import { ScanProgress } from '@/components/ScanProgress'
 import { useToast } from '@/components/toast/toastContext'
+import { ExecutiveSummaryCard } from '@/features/ai/ExecutiveSummaryCard'
 import { useScanPolling } from '@/hooks/useScanPolling'
 import { USE_MOCKS } from '@/lib/config'
 import { formatDateTime, formatNumber } from '@/lib/format'
@@ -249,6 +250,9 @@ function DashboardBody({ scan, findings, onStatusChange, pendingIds }: Dashboard
 
   return (
     <>
+      {/* Resumen ejecutivo del Módulo E: estado en lenguaje de negocio y los tres riesgos principales. */}
+      <ExecutiveSummaryCard scanId={scan.id} />
+
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 xl:grid-cols-12">
         <div className="contents xl:grid xl:grid-cols-[minmax(0,1fr)] xl:gap-5 xl:col-span-6">
           <GradeNotice

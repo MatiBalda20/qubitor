@@ -19,6 +19,7 @@ from app.api.schemas import (
     RepositoryIn,
     RepositoryOut,
     ScanOut,
+    ScanReportOut,
     finding_out,
     repository_out,
     scan_out,
@@ -27,6 +28,7 @@ from app.engines.base import Severity
 from app.models.database import get_db
 from app.models.models import Finding, FindingStatus, Repository, Scan, ScanStatus
 from app.orchestrator.risk import grade, risk_score
+from app.storage.reports import REPORT_KINDS, SIGNED_URL_SECONDS, get_report_storage
 from app.worker.clone import is_github_url
 from app.worker.progress import read_progress
 from app.worker.queue import JOB_TIMEOUT_SECONDS, MAX_RETRIES, enqueue_scan
@@ -140,6 +142,27 @@ def get_scan(scan_id: uuid.UUID, user: CurrentUser = Depends(get_current_user), 
     scan = _get_scan(db, scan_id, user)
     live = read_progress(str(scan.id)) if scan.status == ScanStatus.RUNNING else (None, None)
     return scan_out(scan, live)
+
+
+@router.get("/scans/{scan_id}/report", response_model=ScanReportOut)
+def get_scan_report(scan_id: uuid.UUID, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """URLs firmadas para descargar el reporte y el CBOM del escaneo (guardados en R2 por el Módulo D).
+
+    Primero se comprueba que el escaneo sea de la organización: la URL firmada
+    da acceso al archivo a cualquiera que la tenga.
+    """
+    scan = _get_scan(db, scan_id, user)
+    try:
+        storage = get_report_storage()
+        if storage is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Los reportes no están configurados")
+        urls = {kind: storage.signed_url(str(scan.id), kind) for kind in REPORT_KINDS}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception("No se pudieron firmar las URLs del reporte del escaneo %s", scan.id)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No se pudo consultar el almacenamiento de reportes") from error
+    return ScanReportOut(report_url=urls["report"], cbom_url=urls["cbom"], expires_in=SIGNED_URL_SECONDS)
 
 
 @router.get("/scans/{scan_id}/findings", response_model=list[FindingOut])

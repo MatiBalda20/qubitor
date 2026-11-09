@@ -1,0 +1,35 @@
+{
+  "summary": {
+    "scan_id": "",
+    "available": true,
+    "status": "at_risk",
+    "headline": "Una credencial expuesta y una inyección SQL requieren atención inmediata",
+    "summary": "El repositorio obtuvo la nota C. Tiene una clave de AWS escrita en el código, que permitiría entrar a la cuenta de la empresa, y una consulta SQL armada con datos del usuario, que expone la base de clientes. Además usa dependencias con vulnerabilidades públicas y criptografía que no resistiría una computadora cuántica. Resolver los dos primeros puntos antes del próximo despliegue baja el riesgo de forma inmediata.",
+    "top_risks": [
+      {
+        "title": "Clave de AWS expuesta en config/settings.py",
+        "impact": "Cualquiera con acceso al repositorio puede usar la cuenta de AWS de la empresa.",
+        "priority": "inmediata"
+      },
+      {
+        "title": "Inyección SQL en app/db.py",
+        "impact": "Un atacante podría leer o borrar los datos de todos los clientes.",
+        "priority": "inmediata"
+      },
+      {
+        "title": "requests 2.19.0 y lodash 4.17.4 vulnerables",
+        "impact": "Hay exploits públicos para estas versiones: actualizarlas es de bajo costo.",
+        "priority": "alta"
+      }
+    ],
+    "priorities": [
+      "Rotar la clave de AWS y sacarla del código",
+      "Parametrizar la consulta de app/db.py",
+      "Actualizar requests y lodash a sus versiones corregidas"
+    ],
+    "generated_by": "gemini",
+    "generated_at": "2026-11-08T12:41:00+00:00",
+    "triage_status": "completed",
+    "triage_reason": null
+  }
+}
