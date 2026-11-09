@@ -343,6 +343,76 @@ def test_un_escaneo_reciente_en_curso_no_se_corta(client, db, encolados):
     assert _escanear(client, repo["id"]).json()["id"] == en_curso
 
 
+# Límite de escaneos simultáneos por organización
+
+
+def _repos(client, cantidad, **quien):
+    return [_conectar(client, url=f"https://github.com/acme/repo{i}", **quien).json()["id"] for i in range(cantidad)]
+
+
+def test_limite_de_escaneos_simultaneos_por_organizacion(client, monkeypatch, encolados):
+    monkeypatch.setenv("MAX_ACTIVE_SCANS_PER_ORG", "2")
+    uno, dos, tres = _repos(client, 3)
+    _escanear(client, uno)
+    _escanear(client, dos)
+
+    respuesta = _escanear(client, tres)
+
+    assert respuesta.status_code == 429
+    assert "2 escaneos en curso" in respuesta.json()["detail"]
+    assert len(encolados) == 2
+
+
+def test_al_terminar_uno_se_libera_un_lugar(client, db, monkeypatch):
+    monkeypatch.setenv("MAX_ACTIVE_SCANS_PER_ORG", "1")
+    uno, dos = _repos(client, 2)
+    _terminar(db, _escanear(client, uno).json()["id"])
+
+    assert _escanear(client, dos).status_code == 202
+
+
+def test_el_limite_es_por_organizacion(client, monkeypatch):
+    monkeypatch.setenv("MAX_ACTIVE_SCANS_PER_ORG", "1")
+    [mio] = _repos(client, 1)
+    [ajeno] = _repos(client, 1, **OTRA_ORG)
+    _escanear(client, mio)
+
+    assert _escanear(client, ajeno, **OTRA_ORG).status_code == 202
+
+
+def test_reescanear_el_mismo_repo_no_cuenta_contra_el_limite(client, monkeypatch):
+    monkeypatch.setenv("MAX_ACTIVE_SCANS_PER_ORG", "1")
+    [repo] = _repos(client, 1)
+    primero = _escanear(client, repo).json()
+
+    segundo = _escanear(client, repo)
+
+    assert segundo.status_code == 200
+    assert segundo.json()["id"] == primero["id"]
+
+
+def test_los_escaneos_trabados_no_ocupan_lugar(client, db, monkeypatch):
+    from app.models.models import Scan, ScanStatus
+
+    monkeypatch.setenv("MAX_ACTIVE_SCANS_PER_ORG", "1")
+    uno, dos = _repos(client, 2)
+    trabado = _escanear(client, uno).json()["id"]
+    with db() as session, session.begin():
+        scan = session.get(Scan, uuid.UUID(trabado))
+        scan.status = ScanStatus.RUNNING
+        scan.created_at = scan.started_at = datetime.now(timezone.utc) - timedelta(hours=2)
+
+    assert _escanear(client, dos).status_code == 202
+
+
+@pytest.mark.parametrize(("valor", "esperado"), [("", 2), ("5", 5), ("0", 2), ("-1", 2), ("muchos", 2)])
+def test_limite_configurable(monkeypatch, valor, esperado):
+    from app.config import max_active_scans_per_org
+
+    monkeypatch.setenv("MAX_ACTIVE_SCANS_PER_ORG", valor)
+    assert max_active_scans_per_org() == esperado
+
+
 # Reporte en R2 (Módulo D)
 
 
