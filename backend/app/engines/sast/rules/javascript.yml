@@ -1,0 +1,78 @@
+# Reglas propias de Semgrep para JavaScript y TypeScript (Módulo C, SAST).
+# Son locales a propósito: las del registro de Semgrep tienen licencia propia
+# (sección 10 del plan). metadata.qubitor_id es la parte final del rule_id.
+rules:
+  - id: qubitor-js-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: eval() ejecuta como código un texto que puede venir del usuario. Usar JSON.parse o una tabla de opciones.
+    metadata: {qubitor_id: eval, cwe: CWE-95, title: Uso de eval() con datos variables}
+    patterns:
+      - pattern: eval($X)
+      - pattern-not: eval("...")
+
+  - id: qubitor-js-new-function
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: new Function() compila un texto como código, igual que eval().
+    metadata: {qubitor_id: new-function, cwe: CWE-95, title: Código generado con new Function()}
+    patterns:
+      - pattern: new Function(...)
+      - pattern-not: new Function("...")
+
+  - id: qubitor-js-command-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: El comando del sistema se arma con datos variables. Usar execFile/spawn con los argumentos en un arreglo.
+    metadata: {qubitor_id: command-injection, cwe: CWE-78, title: Comando de shell armado con datos variables}
+    pattern-either:
+      - pattern: $CP.exec(`...${$V}...`, ...)
+      - pattern: $CP.execSync(`...${$V}...`, ...)
+      - pattern: $CP.exec($A + $B, ...)
+      - pattern: $CP.execSync($A + $B, ...)
+      - pattern: exec(`...${$V}...`, ...)
+      - pattern: execSync(`...${$V}...`, ...)
+      - pattern: exec($A + $B, ...)
+      - pattern: execSync($A + $B, ...)
+
+  - id: qubitor-js-sql-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: La consulta SQL se arma concatenando datos. Usar parámetros ($1, ?) del driver.
+    metadata: {qubitor_id: sql-injection, cwe: CWE-89, title: Consulta SQL armada con strings (posible inyección SQL)}
+    pattern-either:
+      - pattern: $DB.query(`...${$V}...`, ...)
+      - pattern: $DB.query($A + $B, ...)
+      - pattern: $DB.execute(`...${$V}...`, ...)
+      - pattern: $DB.execute($A + $B, ...)
+      - pattern: $DB.raw(`...${$V}...`, ...)
+
+  - id: qubitor-js-inner-html
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Asignar HTML con datos variables permite XSS. Usar textContent o sanitizar el HTML.
+    metadata: {qubitor_id: inner-html, cwe: CWE-79, title: HTML insertado con innerHTML (posible XSS)}
+    patterns:
+      - pattern-either:
+          - pattern: $EL.innerHTML = $X
+          - pattern: $EL.outerHTML = $X
+      - pattern-not: $EL.innerHTML = "..."
+      - pattern-not: $EL.outerHTML = "..."
+
+  - id: qubitor-js-document-write
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: document.write() inserta HTML sin escapar (posible XSS).
+    metadata: {qubitor_id: document-write, cwe: CWE-79, title: Uso de document.write()}
+    patterns:
+      - pattern: document.write($X)
+      - pattern-not: document.write("...")
+
+  - id: qubitor-js-timer-string
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: setTimeout/setInterval con un texto lo evalúa como código. Pasar una función.
+    metadata: {qubitor_id: timer-string, cwe: CWE-95, title: setTimeout o setInterval con código en texto}
+    pattern-either:
+      - pattern: setTimeout("...", ...)
+      - pattern: setInterval("...", ...)
