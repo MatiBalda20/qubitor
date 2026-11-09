@@ -411,3 +411,106 @@ def test_limite_configurable(monkeypatch, valor, esperado):
 
     monkeypatch.setenv("MAX_ACTIVE_SCANS_PER_ORG", valor)
     assert max_active_scans_per_org() == esperado
+
+
+# Reporte en R2 (Módulo D)
+
+
+class _ClienteS3Falso:
+    """Lo mínimo de boto3 que usa ReportStorage, con los archivos que existen en el bucket."""
+
+    def __init__(self, existentes):
+        self.existentes = set(existentes)
+        self.pedidos = []
+
+    def head_object(self, Bucket, Key):
+        self.pedidos.append(Key)
+        if Key not in self.existentes:
+            error = Exception("Not Found")
+            error.response = {"Error": {"Code": "404"}, "ResponseMetadata": {"HTTPStatusCode": 404}}
+            raise error
+
+    def generate_presigned_url(self, operacion, Params, ExpiresIn):
+        return f"https://r2.example/{Params['Key']}?expira={ExpiresIn}"
+
+
+@pytest.fixture
+def bucket(monkeypatch):
+    from app.storage.reports import ReportStorage
+
+    def usar(*existentes):
+        cliente = _ClienteS3Falso(existentes)
+        monkeypatch.setattr(routes, "get_report_storage", lambda: ReportStorage(cliente, "qubitor-reportes"))
+        return cliente
+
+    return usar
+
+
+def _escaneo_terminado(client, db):
+    repo = _conectar(client).json()
+    scan_id = _escanear(client, repo["id"]).json()["id"]
+    _terminar(db, scan_id)
+    return scan_id
+
+
+def test_reporte_devuelve_las_urls_firmadas(client, db, bucket):
+    scan_id = _escaneo_terminado(client, db)
+    bucket(f"reports/{scan_id}/report.json", f"reports/{scan_id}/cbom.json")
+
+    respuesta = client.get(f"/scans/{scan_id}/report", headers=headers())
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == {
+        "report_url": f"https://r2.example/reports/{scan_id}/report.json?expira=600",
+        "cbom_url": f"https://r2.example/reports/{scan_id}/cbom.json?expira=600",
+        "expires_in": 600,
+    }
+
+
+def test_reporte_sin_archivos_en_el_bucket_devuelve_null(client, db, bucket):
+    scan_id = _escaneo_terminado(client, db)
+    bucket(f"reports/{scan_id}/report.json")
+
+    reporte = client.get(f"/scans/{scan_id}/report", headers=headers()).json()
+
+    assert reporte["report_url"] and reporte["cbom_url"] is None
+
+
+def test_reporte_de_otra_organizacion_no_toca_el_bucket(client, db, bucket):
+    scan_id = _escaneo_terminado(client, db)
+    cliente = bucket(f"reports/{scan_id}/report.json")
+
+    respuesta = client.get(f"/scans/{scan_id}/report", headers=headers(**OTRA_ORG))
+
+    assert respuesta.status_code == 404
+    assert cliente.pedidos == []
+
+
+def test_reporte_sin_r2_configurado_responde_503(client, db, monkeypatch):
+    scan_id = _escaneo_terminado(client, db)
+    monkeypatch.setattr(routes, "get_report_storage", lambda: None)
+
+    respuesta = client.get(f"/scans/{scan_id}/report", headers=headers())
+
+    assert respuesta.status_code == 503
+    assert "no están configurados" in respuesta.json()["detail"]
+
+
+@pytest.mark.parametrize("donde", ["al_crear_el_cliente", "al_consultar"])
+def test_reporte_si_el_bucket_falla_responde_503(client, db, monkeypatch, donde):
+    from app.storage.reports import ReportStorage
+
+    scan_id = _escaneo_terminado(client, db)
+
+    class ClienteCaido(_ClienteS3Falso):
+        def head_object(self, Bucket, Key):
+            raise ConnectionError("R2 no responde")
+
+    def storage():
+        if donde == "al_crear_el_cliente":
+            raise ValueError("Invalid endpoint")
+        return ReportStorage(ClienteCaido([]), "qubitor-reportes")
+
+    monkeypatch.setattr(routes, "get_report_storage", storage)
+
+    assert client.get(f"/scans/{scan_id}/report", headers=headers()).status_code == 503

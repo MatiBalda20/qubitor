@@ -1,5 +1,5 @@
 import type { FindingRecord, FindingStatus } from '@/types/Finding'
-import type { Repository, Scan } from '@/types/Scan'
+import type { Repository, Scan, ScanReport } from '@/types/Scan'
 import { API_URL } from './config'
 
 /**
@@ -26,7 +26,11 @@ export function setTokenGetter(getter: TokenGetter): void {
   getToken = getter
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/**
+ * Request a la API con el JWT de Clerk y el manejo de errores comunes. Exportado
+ * para que cada módulo defina sus endpoints en su carpeta sin tocar este archivo.
+ */
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await getToken()
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
@@ -78,6 +82,9 @@ export const api = {
 
   getScanFindings: (scanId: string) =>
     request<FindingRecord[]>(`/scans/${encodeURIComponent(scanId)}/findings`),
+
+  /** URLs firmadas que vencen: pedirlas justo antes de descargar. */
+  getScanReport: (scanId: string) => request<ScanReport>(`/scans/${encodeURIComponent(scanId)}/report`),
 
   updateFinding: (findingId: string, status: FindingStatus) =>
     request<FindingRecord>(`/findings/${encodeURIComponent(findingId)}`, {
