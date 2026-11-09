@@ -26,7 +26,11 @@ export function setTokenGetter(getter: TokenGetter): void {
   getToken = getter
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/**
+ * Request a la API con el JWT de Clerk y el manejo de errores comunes. Exportado
+ * para que cada módulo defina sus endpoints en su carpeta sin tocar este archivo.
+ */
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await getToken()
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')

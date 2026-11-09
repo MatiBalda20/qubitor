@@ -262,6 +262,139 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #24
 
+### [2026-11-08] Integración con GitHub: repos del usuario, conexión y clonado de privados (Módulo E)
+
+- **Problema abordado:** Hasta ahora solo se podía pegar la URL de un repo público. Hacía falta listar los repos de la cuenta de GitHub del usuario, conectar uno validándolo contra GitHub y clonar repos privados, sin exponer el token OAuth de GitHub ni confundirlo con el JWT de sesión de Clerk.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo el plan de la sección 4 (Módulo E) y las correcciones de seguridad de la Fase 1 (SEC-02 y SEC-09).
+- **Código / Arquitectura generada:**
+  - `app/integrations/github/`:
+    - `clerk.py`: token OAuth de GitHub desde la Backend API de Clerk;
+    - `client.py`: cliente de la API de GitHub con paginación por cabecera `Link` y errores propios;
+    - `routes.py`: `GET` y `POST /github/repositories`;
+    - `tokens.py`: el worker resuelve el token de quien conectó un repo privado;
+    - `settings.py` y `errors.py`.
+  - `app/worker/clone.py`: validación con `fullmatch`, entorno mínimo para Git y token opcional como cabecera HTTP por `GIT_CONFIG_*`.
+  - Migración `9c2f1a7d3b10`: `repositories.is_private` y `repositories.connected_by_user_id`.
+  - `job.py` pide el token antes de clonar.
+- **Validación y Corrección Humana:**
+  - Tests con GitHub y Clerk simulados, más los endpoints y la resolución del token contra Postgres 17:
+    - paginación, errores 401/403/404/429/500 y nombres inválidos sin llamar a GitHub;
+    - repos de más de 50 MB, privados no habilitados y sin permiso de lectura;
+    - aislamiento entre organizaciones, y que ninguna respuesta incluya el token.
+  - Se comprobó que Git no recibe `DATABASE_URL`, `REDIS_URL` ni `CLERK_SECRET_KEY`, y que el token no aparece en los argumentos del proceso.
+  - Con red: el clonado real de `octocat/Hello-World` funciona con el entorno mínimo; con un token inválido el error no lo filtra y no queda escrito en disco.
+  - La migración se probó con upgrade, downgrade y upgrade, y `alembic check` no encuentra diferencias.
+  - Se corrigió durante el desarrollo:
+    - importar la configuración desde `routes.py` hacía que el worker sin `DATABASE_URL` no arrancara; se movió a `settings.py` y se agregó un test que importa el job sin base;
+    - los clonados falsos de los tests del Módulo A no aceptaban el parámetro `token`, así que el job solo lo pasa cuando hay uno.
+  - Decisiones:
+    - 409 en lugar de 401 para «GitHub no vinculado», porque el frontend trata el 401 como sesión vencida;
+    - los repos privados quedan detrás de `GITHUB_PRIVATE_REPOS=false` hasta corregir la ejecución de Bandit (SEC-01), porque el worker necesitaría `CLERK_SECRET_KEY`.
+  - Limitaciones: Clerk exige credenciales propias de GitHub para leer el token; el nombre del proveedor (`oauth_github`/`github`) se prueba en ese orden porque la documentación no es consistente.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(github): listar, conectar y clonar los repos de GitHub del usuario
+
+### [2026-11-08] Triage de hallazgos con Gemini y resumen ejecutivo (Módulo E)
+
+- **Problema abordado:** Los motores devuelven hallazgos crudos. Hacía falta que Gemini indique falsos positivos, severidad real y remediación por hallazgo, y un resumen ejecutivo del repo, sin enviar secretos ni archivos completos y sin que una falla de la IA haga perder hallazgos o frene el escaneo.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), con la skill `gemini-api-dev` para usar el SDK y los modelos vigentes (Interactions API, `google-genai`), siguiendo la sección 5 del plan (response_schema) y el riesgo de cuota de la sección 10.
+- **Código / Arquitectura generada:**
+  - `app/ai/`:
+    - `masking.py`: segundo enmascarado antes de enviar;
+    - `gemini.py`: cliente con salida estructurada, `store=False` y errores de cuota, caída y respuesta inválida;
+    - `triage.py`: lotes de 15, tope de 60, validación por fingerprint, caché por contenido y límites de seguridad;
+    - `cache.py`: reutiliza evaluaciones del mismo repo desde la base;
+    - `summary.py`: resumen con Gemini o heurístico;
+    - `pipeline.py`: `apply_ai`, que no lanza;
+    - `routes.py`: `GET /scans/{id}/summary`.
+  - Integración en archivos del Módulo A: `ScanResult` suma `triage` y `summary` con valores por defecto, `SqlScanStore` guarda `findings.ai_*` y `scans.ai_summary`, y `job.py` llama a `apply_ai`. Migración `b41d7e2a9c55`.
+- **Validación y Corrección Humana:**
+  - Tests con Gemini simulado (y con Postgres 17 para caché, guardado y endpoint):
+    - lotes, tope y prioridad;
+    - secretos que no salen y fragmentos recortados a 5 líneas;
+    - respuestas inválidas y fingerprints ajenos o repetidos;
+    - cuota agotada, dos errores seguidos y límite de tiempo;
+    - caché por contenido, sin compartirse entre organizaciones;
+    - score recalculado y job completo con Gemini caído.
+  - Contra la API real se verificó que el SDK acepta los parámetros (con una clave inválida responde `API_KEY_INVALID`) y que su error de cuota trae `status_code = 429`.
+  - Riesgo identificado y mitigado: **prompt injection** desde el código escaneado. Un comentario en el repo podría pedirle a la IA que marque su propio hallazgo como falso positivo y baje el Risk Score. Además de indicarle que trate el fragmento como datos, se fijaron límites: un secreto nunca es falso positivo ni baja de severidad, y nada baja más de dos niveles.
+  - Se corrigió durante el desarrollo: los fixtures de los tests creaban las tablas antes de importar los modelos y el primer test fallaba si corría solo.
+  - Decisiones:
+    - caché en la base, en lugar de un servicio nuevo, porque reutiliza los escaneos del mismo repo;
+    - resumen heurístico como fallback, como pedía el Checkpoint 1;
+    - modelo por defecto `gemini-3.5-flash-lite` por la cuota gratuita.
+  - Limitaciones: no se probó con una clave real de Gemini, y los hallazgos más allá del tope de 60 quedan sin triage.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(ia): triage de hallazgos con Gemini y resumen ejecutivo
+
+### [2026-11-08] Escaneo en cada push: Worker de webhooks y endpoint interno (Módulo E)
+
+- **Problema abordado:** Lanzar un escaneo automáticamente en cada push sin un servidor propio esperando eventos (equivalente a Lambda + API Gateway), verificando que el evento venga de GitHub y sin crear una cola paralela a la del Módulo A.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), con la skill `workers-best-practices` de Cloudflare (`wrangler.jsonc`, tipos generados, logs y traces, secretos y comparación en tiempo constante).
+- **Código / Arquitectura generada:**
+  - `infra/webhook-worker/`: verifica `X-Hub-Signature-256`, responde `ping`, filtra los push a la rama por defecto, deduplica por `X-GitHub-Delivery` en KV y reenvía firmado a la API.
+  - `app/integrations/github/webhooks.py`: `POST /internal/github/push` verifica la firma HMAC con timestamp, deduplica con `SET NX` en Redis y encola con `enqueue_scan` del Módulo A, con el mismo criterio de «escaneo activo» que la API.
+- **Validación y Corrección Humana:**
+  - Decisión de arquitectura: la auditoría de la Fase 1 mostró que con `REDIS_URL` se puede encolar cualquier función de Python en el scan-worker, así que el Worker **no** publica directo en Redis. Llama a la API, que es la única dueña de la cola.
+  - Pruebas del Worker: 24 tests con vitest (firmas válidas e inválidas, eventos ignorados, duplicados, API caída o con error, cuerpo de más de 2 MiB y JSON inválido) y `wrangler deploy --dry-run` sin errores.
+  - Pruebas del endpoint: 22 tests contra Postgres 17 (firma vieja, otro secreto, cuerpo modificado, valores no canónicos, entregas repetidas, escaneo activo, cola caída y varias organizaciones con el mismo repo).
+  - La compatibilidad de la firma entre TypeScript y Python se fijó con un vector calculado en Python dentro de los tests del Worker.
+  - Se corrigió durante el desarrollo: el endpoint limpiaba con `strip()` una URL con salto de línea y la aceptaba; ahora rechaza todo valor no canónico.
+  - Limitaciones: no se desplegó el Worker ni se configuró un webhook real; KV es eventualmente consistente, por eso la API deduplica también.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(cloud): escaneo automático en cada push con un Worker de webhooks
+
+### [2026-11-08] Pantalla «Conectar repositorio» y tests del frontend (Módulo E)
+
+- **Problema abordado:** La ruta `/connect` era un placeholder. Hacía falta listar y buscar los repos de GitHub del usuario, conectar uno y lanzar su primer escaneo, y poder pegar la URL de un repo público. El frontend tampoco tenía ningún test.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` (hojas, botones primario y secundario, inputs, cuatro estados) y los componentes compartidos del Módulo B, con la skill `vercel-react-best-practices`.
+- **Código / Arquitectura generada:**
+  - `features/connect/`:
+    - `ConnectPage.tsx`: lista con búsqueda, «Cargar más», «Conectar y escanear» con `ScanProgress` y `useScanPolling`, y formulario de URL;
+    - `dataSource.ts`: API o mocks;
+    - `search.ts` y `types.ts`;
+    - `mock.json`.
+  - Vitest con jsdom y Testing Library (`vitest.config.ts`, `src/test/setup.ts`, `npm test`).
+  - `lib/api.ts` exporta `request`, y `App.tsx` publica la ruta.
+- **Validación y Corrección Humana:**
+  - 27 tests:
+    - búsqueda sin tildes ni mayúsculas;
+    - validación de la URL, igual a la del backend;
+    - paginación y conexión con escaneo;
+    - error 409 de GitHub no vinculado, error de la API y toast ante una conexión fallida.
+  - `eslint`, `tsc -b` y `vite build` sin errores; `npm audit --omit=dev` sin vulnerabilidades.
+  - Se corrigió durante el desarrollo: el texto de ayuda del campo de URL estaba dentro del `<label>` y pasaba a formar parte del nombre accesible del input; ahora está afuera y se asocia con `aria-describedby`.
+  - Decisión: la búsqueda filtra los repos ya cargados, porque la API de GitHub `/user/repos` no busca; si no hay resultados y quedan páginas, la pantalla lo avisa.
+  - Limitación: no se revisó en un navegador real, solo con Testing Library en jsdom.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(connect): pantalla Conectar repositorio
+
+### [2026-11-08] Panel de remediación y tarjeta de resumen ejecutivo (Módulo E)
+
+- **Problema abordado:** Mostrar la evaluación de la IA en todas las vistas de hallazgos sin que cada módulo la reimplemente, y presentar el resumen ejecutivo del escaneo arriba del dashboard general sin rediseñar el trabajo del Módulo B.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` y los componentes compartidos.
+- **Código / Arquitectura generada:**
+  - `features/ai/`:
+    - `AiTriagePanel.tsx`: falso positivo, cambio de severidad, explicación, remediación en pasos y aviso de IA;
+    - `remediation.ts`;
+    - `ExecutiveSummaryCard.tsx`, `summaryData.ts`, `types.ts` y `mock.json`.
+  - Cambios mínimos en archivos compartidos:
+    - `FindingCard` usa el panel, así lo heredan las vistas de C y D;
+    - `DashboardPage` agrega la tarjeta antes de la nota.
+- **Validación y Corrección Humana:**
+  - 14 tests nuevos (41 en total del frontend):
+    - pasos numerados o con guiones;
+    - falso positivo, cambio de severidad y sin triage;
+    - texto de la IA escapado (un `<img onerror>` no se renderiza);
+    - tarjeta con IA, heurística, cuota agotada, sin resumen y con error;
+    - dashboard completo con la tarjeta integrada.
+  - `eslint`, `tsc -b` y `vite build` sin errores.
+  - Se corrigió durante el desarrollo: dentro de `FindingCard` el panel repetía la «Severidad del motor» que la tarjeta ya mostraba; se agregó `showSeverityChange` para ocultarla ahí.
+  - Hubo que sumar un `matchMedia` mínimo al setup de los tests, porque jsdom no lo trae y el dashboard lo usa.
+  - Limitación: no se revisó en un navegador real.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(ia): panel de remediación y resumen ejecutivo en el dashboard
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
