@@ -10,6 +10,7 @@ import { formatDateTime, formatDuration, formatNumber, pluralize } from '@/lib/f
 import { ENGINE_LABEL } from '@/lib/labels'
 import type { EngineName } from '@/types/Finding'
 import { loadHistory, type HistoryData, type HistoryScan } from './dataSource'
+import { RiskTrendChart } from './RiskTrendChart'
 import { GRADE_TEXT, historyRows, SCAN_STATUS_LABEL, scoreTrend, type HistoryRow } from './scans'
 
 type LoadState =
@@ -147,6 +148,7 @@ function HistoryView({ data }: { data: HistoryData }) {
                 Cada escaneo completado se compara con el anterior.
               </p>
             )}
+            <RiskTrendChart scans={scans} />
             <ScanTable rows={rows} />
           </>
         )}
@@ -156,7 +158,7 @@ function HistoryView({ data }: { data: HistoryData }) {
 }
 
 // La tabla en columnas necesita el ancho de xl (el menú lateral ocupa lugar desde lg); antes, cada escaneo es una ficha.
-const COLUMNS = 'xl:grid-cols-[minmax(10rem,1.3fr)_minmax(7rem,1fr)_3rem_5rem_5.5rem_6rem_minmax(4.5rem,1fr)]'
+const COLUMNS = 'xl:grid-cols-[minmax(9.5rem,1.3fr)_minmax(6.5rem,1fr)_2.5rem_4.5rem_4.5rem_6.5rem_5.5rem_minmax(4.5rem,1fr)]'
 
 function ScanTable({ rows }: { rows: readonly HistoryRow[] }) {
   return (
@@ -169,7 +171,7 @@ function ScanTable({ rows }: { rows: readonly HistoryRow[] }) {
       </header>
 
       <div aria-hidden="true" className={cn('hidden gap-4 border-b border-rule bg-paper/60 px-5 py-2 xl:grid', COLUMNS)}>
-        {['Fecha', 'Estado', 'Nota', 'Risk Score', 'Cambio', 'Duración', 'Commit'].map((label) => (
+        {['Fecha', 'Estado', 'Nota', 'Risk Score', 'Cambio', 'Nuevos / resueltos', 'Duración', 'Commit'].map((label) => (
           <span key={label} className="field-label">
             {label}
           </span>
@@ -210,6 +212,9 @@ function ScanRow({ row }: { row: HistoryRow }) {
         </Cell>
         <Cell label="Cambio">
           <ScoreDelta delta={delta} />
+        </Cell>
+        <Cell label="Nuevos / resueltos">
+          <FindingChanges scan={scan} />
         </Cell>
         <Cell label="Duración">
           {scan.finished_at ? (
@@ -275,6 +280,21 @@ function ScoreDelta({ delta }: { delta: number | null }) {
       <span className="sr-only">{delta > 0 ? 'Subió' : 'Bajó'}</span>
       {delta > 0 ? '+' : '−'}
       {formatNumber(Math.abs(delta))}
+    </span>
+  )
+}
+
+/** Hallazgos que aparecieron y que dejaron de aparecer respecto del escaneo completado anterior. */
+function FindingChanges({ scan }: { scan: HistoryScan }) {
+  if (scan.new_findings == null || scan.resolved_findings == null) return <Empty />
+  return (
+    <span className="text-ink-2 tabular">
+      <span aria-hidden="true">
+        +{scan.new_findings} / {scan.resolved_findings}
+      </span>
+      <span className="sr-only">
+        {pluralize(scan.new_findings, 'nuevo', 'nuevos')}, {pluralize(scan.resolved_findings, 'resuelto', 'resueltos')}
+      </span>
     </span>
   )
 }

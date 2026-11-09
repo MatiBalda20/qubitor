@@ -230,6 +230,67 @@ def test_historial_del_mas_nuevo_al_mas_viejo(client, db):
     assert [s["id"] for s in historial] == [nuevo, viejo]
 
 
+# Evolución entre escaneos
+
+
+def _escaneo_con(client, db, repo_id, *fingerprints, info=()):
+    """Escaneo completado con hallazgos de esos fingerprints (más algunos info)."""
+    from app.models.models import Finding, Scan, ScanStatus
+
+    scan_id = _escanear(client, repo_id).json()["id"]
+    with db() as session, session.begin():
+        scan = session.get(Scan, uuid.UUID(scan_id))
+        scan.status, scan.started_at, scan.finished_at = ScanStatus.COMPLETED, datetime.now(timezone.utc), datetime.now(timezone.utc)
+        scan.risk_score, scan.grade = 80.0, "B"
+        for fp in fingerprints:
+            session.add(Finding(scan_id=scan.id, fingerprint=fp, engine="sast", rule_id="r", title="t",
+                                severity=Severity.HIGH, file_path="a.py", line=1, snippet="s", description="d"))
+        for fp in info:
+            session.add(Finding(scan_id=scan.id, fingerprint=fp, engine="crypto", rule_id="i", title="t",
+                                severity=Severity.INFO, file_path="a.py", line=1, snippet="s", description="d"))
+    return scan_id
+
+
+def test_historial_cuenta_hallazgos_nuevos_y_resueltos(client, db):
+    repo = _conectar(client).json()["id"]
+    primero = _escaneo_con(client, db, repo, "a", "b", "c")
+    segundo = _escaneo_con(client, db, repo, "b", "c", "d", "e", info=["inv1"])
+    tercero = _escaneo_con(client, db, repo, "e", info=["inv2"])
+
+    historial = {s["id"]: s for s in client.get(f"/repositories/{repo}/history", headers=headers()).json()}
+
+    assert (historial[primero]["new_findings"], historial[primero]["resolved_findings"]) == (None, None)
+    assert (historial[segundo]["new_findings"], historial[segundo]["resolved_findings"]) == (2, 1)
+    # Los info (inventario) no cuentan como nuevos ni resueltos.
+    assert (historial[tercero]["new_findings"], historial[tercero]["resolved_findings"]) == (0, 3)
+
+
+def test_los_escaneos_fallidos_no_cortan_la_comparacion(client, db):
+    from app.models.models import Scan, ScanStatus
+
+    repo = _conectar(client).json()["id"]
+    _escaneo_con(client, db, repo, "a", "b")
+    fallido = _escanear(client, repo).json()["id"]
+    with db() as session, session.begin():
+        session.get(Scan, uuid.UUID(fallido)).status = ScanStatus.FAILED
+    ultimo = _escaneo_con(client, db, repo, "b", "c")
+
+    historial = {s["id"]: s for s in client.get(f"/repositories/{repo}/history", headers=headers()).json()}
+
+    assert (historial[fallido]["new_findings"], historial[fallido]["resolved_findings"]) == (None, None)
+    assert (historial[ultimo]["new_findings"], historial[ultimo]["resolved_findings"]) == (1, 1)
+
+
+def test_un_solo_escaneo_no_tiene_comparacion(client, db):
+    repo = _conectar(client).json()["id"]
+    unico = _escaneo_con(client, db, repo, "a")
+
+    [scan] = client.get(f"/repositories/{repo}/history", headers=headers()).json()
+
+    assert scan["id"] == unico
+    assert (scan["new_findings"], scan["resolved_findings"]) == (None, None)
+
+
 # Hallazgos
 
 

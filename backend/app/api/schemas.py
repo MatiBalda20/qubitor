@@ -45,6 +45,10 @@ class ScanOut(BaseModel):
     grade: str | None
     error: str | None
     engine_errors: dict[str, str] | None
+    # Solo en /history: hallazgos que aparecieron o dejaron de aparecer respecto
+    # del escaneo completado anterior. Null si no hay con qué comparar.
+    new_findings: int | None = None
+    resolved_findings: int | None = None
 
 
 class AiTriageOut(BaseModel):

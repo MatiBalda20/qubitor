@@ -139,12 +139,15 @@ def start_scan(
 def repository_history(
     repository_id: uuid.UUID, user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    """Escaneos del repo, del más nuevo al más viejo."""
+    """Escaneos del repo, del más nuevo al más viejo, con los hallazgos nuevos y resueltos de cada uno."""
     repo = _get_repository(db, repository_id, user)
-    scans = db.scalars(
-        select(Scan).where(Scan.repository_id == repo.id).order_by(Scan.created_at.desc()).limit(HISTORY_LIMIT)
+    scans = list(
+        db.scalars(
+            select(Scan).where(Scan.repository_id == repo.id).order_by(Scan.created_at.desc()).limit(HISTORY_LIMIT)
+        )
     )
-    return [scan_out(scan) for scan in scans]
+    changes = _changes_between_scans(db, scans)
+    return [scan_out(scan).model_copy(update=changes.get(scan.id, {})) for scan in scans]
 
 
 @router.get("/scans/{scan_id}", response_model=ScanOut)
@@ -251,6 +254,31 @@ def _is_stale(scan: Scan) -> bool:
     """True si el escaneo lleva más tiempo activo del que puede durar."""
     since = scan.started_at or scan.created_at
     return since is not None and datetime.now(timezone.utc) - since > STALE_AFTER
+
+
+def _changes_between_scans(db: Session, scans: list[Scan]) -> dict[uuid.UUID, dict[str, int]]:
+    """Hallazgos nuevos y resueltos de cada escaneo completado respecto del anterior.
+
+    Compara fingerprints, que identifican el mismo problema entre escaneos aunque
+    cambie el código vecino. No cuenta los info (inventario, no vulnerabilidades).
+    El escaneo completado más viejo de la lista no tiene con qué compararse.
+    """
+    completed = sorted((s for s in scans if s.status == ScanStatus.COMPLETED), key=lambda s: s.created_at)
+    if len(completed) < 2:
+        return {}
+    rows = db.execute(
+        select(Finding.scan_id, Finding.fingerprint).where(
+            Finding.scan_id.in_([s.id for s in completed]), Finding.severity != Severity.INFO
+        )
+    )
+    fingerprints: dict[uuid.UUID, set[str]] = {s.id: set() for s in completed}
+    for scan_id, fingerprint in rows:
+        fingerprints[scan_id].add(fingerprint)
+    changes = {}
+    for previous, current in zip(completed, completed[1:]):
+        before, after = fingerprints[previous.id], fingerprints[current.id]
+        changes[current.id] = {"new_findings": len(after - before), "resolved_findings": len(before - after)}
+    return changes
 
 
 def _normalize_url(url: str) -> str:

@@ -12,7 +12,12 @@
       "id": "scan_0008",
       "repository_id": "repo_demo",
       "status": "running",
-      "engines": ["sast", "sca", "secrets", "crypto"],
+      "engines": [
+        "sast",
+        "sca",
+        "secrets",
+        "crypto"
+      ],
       "progress": null,
       "stage": null,
       "commit_sha": null,
@@ -21,13 +26,20 @@
       "risk_score": null,
       "grade": null,
       "error": null,
-      "engine_errors": null
+      "engine_errors": null,
+      "new_findings": null,
+      "resolved_findings": null
     },
     {
       "id": "scan_0007",
       "repository_id": "repo_demo",
       "status": "completed",
-      "engines": ["sast", "sca", "secrets", "crypto"],
+      "engines": [
+        "sast",
+        "sca",
+        "secrets",
+        "crypto"
+      ],
       "progress": 100,
       "stage": null,
       "commit_sha": "0cd43c6a8f1e2d3b4c5a6f7e8d9c0b1a2f3e4d5c",
@@ -36,13 +48,20 @@
       "risk_score": 49,
       "grade": "D",
       "error": null,
-      "engine_errors": null
+      "engine_errors": null,
+      "new_findings": 3,
+      "resolved_findings": 1
     },
     {
       "id": "scan_0006",
       "repository_id": "repo_demo",
       "status": "completed",
-      "engines": ["sast", "sca", "secrets", "crypto"],
+      "engines": [
+        "sast",
+        "sca",
+        "secrets",
+        "crypto"
+      ],
       "progress": 100,
       "stage": null,
       "commit_sha": "9b1f0e7c2d4a6b8c0e2f4a6c8e0b2d4f6a8c0e2b",
@@ -51,13 +70,22 @@
       "risk_score": 62,
       "grade": "C",
       "error": null,
-      "engine_errors": { "sca": "OsvError: OSV no respondió a tiempo" }
+      "engine_errors": {
+        "sca": "OsvError: OSV no respondió a tiempo"
+      },
+      "new_findings": 2,
+      "resolved_findings": 9
     },
     {
       "id": "scan_0005",
       "repository_id": "repo_demo",
       "status": "failed",
-      "engines": ["sast", "sca", "secrets", "crypto"],
+      "engines": [
+        "sast",
+        "sca",
+        "secrets",
+        "crypto"
+      ],
       "progress": null,
       "stage": null,
       "commit_sha": null,
@@ -66,13 +94,20 @@
       "risk_score": null,
       "grade": null,
       "error": "El repo no existe o no es público",
-      "engine_errors": null
+      "engine_errors": null,
+      "new_findings": null,
+      "resolved_findings": null
     },
     {
       "id": "scan_0004",
       "repository_id": "repo_demo",
       "status": "completed",
-      "engines": ["sast", "sca", "secrets", "crypto"],
+      "engines": [
+        "sast",
+        "sca",
+        "secrets",
+        "crypto"
+      ],
       "progress": 100,
       "stage": null,
       "commit_sha": "4e6a8c0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c",
@@ -81,13 +116,20 @@
       "risk_score": 38.5,
       "grade": "F",
       "error": null,
-      "engine_errors": null
+      "engine_errors": null,
+      "new_findings": 1,
+      "resolved_findings": 6
     },
     {
       "id": "scan_0003",
       "repository_id": "repo_demo",
       "status": "completed",
-      "engines": ["sast", "sca", "secrets", "crypto"],
+      "engines": [
+        "sast",
+        "sca",
+        "secrets",
+        "crypto"
+      ],
       "progress": 100,
       "stage": null,
       "commit_sha": "1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c",
@@ -96,7 +138,9 @@
       "risk_score": 21,
       "grade": "F",
       "error": null,
-      "engine_errors": null
+      "engine_errors": null,
+      "new_findings": null,
+      "resolved_findings": null
     }
   ]
 }
