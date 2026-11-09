@@ -19,12 +19,21 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from cryptography import x509
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa, x448, x25519
+from cryptography.hazmat.primitives.asymmetric import (
+    dsa,
+    ec,
+    ed448,
+    ed25519,
+    rsa,
+    x448,
+    x25519,
+)
 from cryptography.hazmat.primitives.serialization import pkcs12
 
 from app.engines.base import Finding, Severity
-from app.engines.crypto.pqc import _iter_files
+from app.engines.crypto.files import iter_repo_files
 
 KEYSTORE_SUFFIXES = (".p12", ".pfx")
 CERT_SUFFIXES = (".pem", ".crt", ".cer", ".der", ".key", *KEYSTORE_SUFFIXES)
@@ -46,7 +55,7 @@ def scan_certs(repo_path: str, now: datetime | None = None) -> list[Finding]:
     repo = Path(repo_path)
     now = now or datetime.now(timezone.utc)
     findings: list[Finding] = []
-    for path in _iter_files(repo, CERT_SUFFIXES):
+    for path in iter_repo_files(repo, lambda p: p.suffix in CERT_SUFFIXES):
         try:
             if path.stat().st_size > MAX_FILE_BYTES:
                 continue
@@ -204,7 +213,7 @@ def _breaks_with_shor(key: object) -> bool:
 def _signature_hash(certificate: x509.Certificate) -> str | None:
     try:
         algorithm = certificate.signature_hash_algorithm
-    except Exception:
+    except UnsupportedAlgorithm:
         # Algoritmo de firma que la librería no conoce: no se puede decir nada.
         return None
     return algorithm.name if algorithm else None
