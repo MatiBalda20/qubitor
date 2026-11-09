@@ -183,6 +183,33 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #23
 
+### [2026-11-08] CBOM en formato CycloneDX 1.6 (backend/app/storage/cyclonedx.py)
+
+- **Problema abordado:** El inventario criptográfico (CBOM) tenía un formato propio. CycloneDX 1.6 es el estándar que incorpora activos criptográficos, así que el CBOM que se guarda en R2 se puede abrir con cualquier herramienta que lea CycloneDX.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** `cyclonedx.py` arma un componente `cryptographic-asset` por algoritmo, con su primitiva (`pke`, `signature`, `key-agree`, `hash`, `block-cipher`, etc.), sus funciones, el nivel de seguridad clásico y la categoría cuántica de NIST (0 para lo que rompe Shor y lo que ya está roto hoy), y cada lugar del código donde aparece (`evidence.occurrences` con archivo y línea). La severidad, la amenaza cuántica y las reglas de Qubitor van como `properties`. TLS sin validar se registra como protocolo. Agregado después: las reglas de certificados de `certs.py` (PR #34); la clave de cada certificado entra como algoritmo y cada certificado como componente `certificate` con sujeto, vencimiento y sus problemas (firma SHA-1, vencido) como `properties`. `reports.py` guarda este CBOM en R2 como `application/vnd.cyclonedx+json` y se descarga como `cbom.cdx.json`.
+- **Validación y Corrección Humana:** Leí el código de `cyclonedx.py` y el cambio en `reports.py`, corrí `pytest` en mi máquina (también con `QUBITOR_TESTS_RED=1`, que valida contra el esquema oficial) y revisé el JSON de un CBOM generado. Los certificados (agregados después) tienen 4 tests más y entran en la validación contra el esquema oficial; también leí ese código y corrí sus tests. Cubren: 16 tests en `test_cyclonedx.py` (agrupación por algoritmo, niveles de seguridad, criptografía clásica, TLS como protocolo, regla desconocida, peor severidad, otros motores afuera) y 2 que validan contra el esquema JSON oficial de CycloneDX 1.6 con todas las reglas de `pqc.py` y `classic.py` (con `QUBITOR_TESTS_RED=1`, porque bajan el esquema). El CBOM del repo de demo también valida sin errores.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #31 (se mergeó a la rama del #30 cuando esa ya estaba en `main`; llega a `main` con el #36)
+
+### [2026-11-08] Reporte del escaneo en PDF (backend/app/storage/pdf.py)
+
+- **Problema abordado:** El plan pide guardar el reporte de cada escaneo en JSON y en PDF. El JSON sirve para herramientas; el PDF, para leerlo o compartirlo con alguien que no usa Qubitor.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** `pdf.py` arma el PDF con `reportlab` (licencia BSD), que se importa recién al generarlo para no ocupar memoria en el worker cuando no hace falta. Incluye repositorio, commit, fecha, Risk Score y nota, resumen por gravedad, motores con errores, los hallazgos de crítica a baja (hasta 300, con motor, CVE o CWE y archivo y línea) y el inventario criptográfico como lista de algoritmos. El texto se escapa para el formato de `reportlab` y lo que las fuentes estándar no pueden dibujar se reemplaza. `reports.py` lo guarda en R2 como `reports/<scan_id>/report.pdf`; si falla solo el PDF, el reporte JSON y el CBOM quedan guardados igual.
+- **Validación y Corrección Humana:** Leí el código de `pdf.py` y el cambio en `reports.py`, corrí `pytest` en mi máquina y abrí el PDF generado con el repo de demo. Cubren: 6 tests en `test_pdf.py` que leen el texto del PDF generado con `pypdf` (resumen, acentos, orden por gravedad, sin problemas, motores con errores, límite de hallazgos, texto con marcas y caracteres raros) y 1 en `test_reports.py` (si falla el PDF, los JSON quedan). Se generó el PDF del repo de demo y se revisó cómo se ve. `pytest` pasa completo.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #36
+
+### [2026-11-08] Certificados y claves versionados (engines/crypto/certs.py)
+
+- **Problema abordado:** Además del código, los repos suelen tener certificados y claves commiteados (`.pem`, `.crt`, `.key`). Su algoritmo también lo puede romper Shor, y pueden tener problemas de hoy: claves RSA cortas, firmas con SHA-1 o certificados vencidos.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** `certs.py` recorre los archivos `.pem`, `.crt`, `.cer`, `.der` y `.key` (hasta 1 MB, con los mismos resguardos que `pqc.py` contra enlaces simbólicos y carpetas de dependencias), lee cada certificado o clave con la librería `cryptography`, incluidos los PEM con varios certificados y los certificados en DER, y reporta: `crypto.pqc.cert-quantum-vulnerable` (medium) para RSA, curva elíptica, DSA y Ed25519; `crypto.pqc.cert-weak-key` (high) para RSA de menos de 2048 bits, que reemplaza al anterior; `crypto.pqc.cert-weak-signature` (high) para firmas con SHA-1 o MD5; y `crypto.pqc.cert-expired` (medium) y `crypto.pqc.cert-expiring` (low, menos de 30 días). En `metadata` van el algoritmo, el tamaño de clave, el sujeto y el vencimiento. El hallazgo nunca copia el contenido del archivo. Las claves cifradas con contraseña y los archivos rotos se saltean. Que haya una clave privada commiteada lo sigue reportando el motor de secretos (Módulo C). `scan_pqc` llama a `scan_certs`, así no se toca `CryptoEngine`, que es compartido. En el repo de demo se plantó `certs/server.pem`, autofirmado con RSA de 1024 bits y SHA-1 y datos falsos.
+- **Validación y Corrección Humana:** Corrí `pytest` en mi máquina y probé el repo de demo: el certificado plantado da la clave RSA de 1024 bits y la firma SHA-1. Cubren: 16 tests en `test_certs.py` con certificados generados en el momento (RSA, curva elíptica, Ed25519, vencido, por vencer, cadena de dos certificados, DER, clave pública, clave privada sin copiar su contenido, clave cifrada, archivos rotos, otras extensiones y `node_modules`, archivo grande) y uno con un certificado RSA-1024 con SHA-1 generado con `openssl`, porque `cryptography` ya no firma con SHA-1. Un test contra el repo de demo real (con `QUBITOR_TESTS_RED=1`). `pytest` pasa completo.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #36 (iba en el #34; se juntó con el #36)
+
 ### [2026-11-08] Caché de OSV en Cloudflare Workers KV (engines/sca/cache.py)
 
 - **Problema abordado:** Cada escaneo consultaba OSV por todas las dependencias y por el detalle de cada vulnerabilidad, aunque el mismo paquete y versión se hubiera consultado minutos antes. Las vulnerabilidades de una versión cambian poco de un día para otro, así que conviene cachearlas en una base clave-valor NoSQL (Cloudflare Workers KV, equivalente a DynamoDB en AWS).
@@ -208,6 +235,16 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Correcciones de la revisión antes del PR:** el `aria-label` sobre un `span` no se anuncia en lectores de pantalla: el guion de dato vacío ahora tiene texto oculto. El resumen dice «el escaneo más antiguo de la lista», porque el historial trae hasta 50, y contempla que el score no haya cambiado.
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(history): pantalla Historial
+
+### [2026-11-08] Evolución del Risk Score en el Historial
+
+- **Problema abordado:** El plan pide que la pantalla «Historial» tenga un gráfico de evolución del Risk Score con los hallazgos nuevos y resueltos entre un escaneo y otro. La primera versión solo tenía la lista.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` y una guía de visualización de datos (una sola serie sin leyenda, un solo eje, marcas finas, tooltip también con teclado).
+- **Código / Arquitectura generada:** Backend: `GET /repositories/{id}/history` agrega `new_findings` y `resolved_findings` a cada escaneo completado, comparando sus fingerprints con los del completado anterior; no cuenta los hallazgos info (inventario) y saltea los fallidos. Frontend: `RiskTrendChart.tsx` en SVG propio, sin librerías nuevas: línea del Risk Score en el tiempo con la grilla en los cortes de las notas, solo el último valor etiquetado, crosshair y tooltip con nota, nuevos, resueltos y fecha, navegable con las flechas. La tabla suma la columna «Nuevos / resueltos». 3 tests nuevos de backend.
+- **Validación y Corrección Humana:** Tests contra Postgres 16 para el conteo, incluidos los info y un fallido en el medio. Revisado en el navegador a 1440 px y 375 px, con el tooltip por mouse y por teclado, sin errores en consola. Los hallazgos nuevos y resueltos no se dibujan en un segundo eje (escala distinta): van en el tooltip y en la tabla. En el celular el gráfico no aparecía porque el ancho solo se medía con el primer aviso de `ResizeObserver`, que puede no llegar; ahora se mide al montarse.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(history): evolución del Risk Score
+
 ### [2026-11-08] Endpoints REST y autenticación con Clerk
 
 - **Problema abordado:** El frontend tenía el cliente de la API listo pero no había endpoints: seguía con datos de ejemplo. Hacían falta los seis endpoints del plan y validar la sesión de Clerk en cada request, separando los datos por organización.
@@ -217,6 +254,14 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Correcciones de la revisión antes del PR:** Si el worker se caía o el trabajo vencía, el escaneo quedaba en curso para siempre y el repo no se podía volver a escanear; ahora, pasados 30 minutos, se marca como fallido y se lanza uno nuevo. Además, `Acme/Demo` y `acme/demo` se conectaban como dos repos distintos. Ambos casos se reprodujeron con tests antes de corregirlos. Queda como limitación que dos pedidos simultáneos para el mismo repo pueden crear dos escaneos.
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(api): endpoints REST y autenticación con Clerk
+### [2026-11-08] Endpoint de descarga del reporte del escaneo
+
+- **Problema abordado:** El worker guarda el reporte y el CBOM de cada escaneo en Cloudflare R2 (PR #30, Módulo D), pero el frontend no tenía cómo descargarlos. Hacía falta un endpoint que entregue URLs firmadas sin que nadie pueda pedir los archivos de otra organización.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), a pedido de Valentina, reutilizando `get_report_storage` y `signed_url` de su PR.
+- **Código / Arquitectura generada:** `GET /scans/{id}/report` en `app/api/routes.py` devuelve `{report_url, cbom_url, expires_in}` (`ScanReportOut` en `schemas.py`). Usa el mismo `_get_scan` que los demás endpoints, así que un escaneo de otra organización responde 404 antes de consultar el bucket. Si un archivo no existe, su URL es `null`; si R2 no está configurado o no responde, 503. 6 tests nuevos.
+- **Validación y Corrección Humana:** Probado contra Postgres 16 en Docker con la clase `ReportStorage` real y un cliente S3 falso. Se comprobó que el test de aislamiento falla si se quita el chequeo de organización. Se cubre también el caso en que crear el cliente de R2 falla (por ejemplo, un endpoint inválido), que en la PR #30 todavía puede lanzar desde `archive_scan`.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(api): endpoint para descargar el reporte del escaneo
 ### [2026-11-08] Guardado del escaneo en Postgres (SqlScanStore)
 
 - **Problema abordado:** El scan-worker solo registraba los resultados en el log. Hacía falta guardar el estado del escaneo, el Risk Score y los hallazgos en Supabase, con los modelos de la PR #18, para que la API y el frontend muestren escaneos reales.
@@ -230,19 +275,170 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 
 - **Problema abordado:** Mostrar qué criptografía usa el repositorio (CBOM), qué parte rompería una computadora cuántica y en qué orden migrar a ML-KEM (FIPS 203) y ML-DSA (FIPS 204). Los hallazgos de `pqc.py` y de `classic.py` llegan sueltos: hay que clasificarlos por amenaza y agruparlos en pasos de migración.
 - **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` y los componentes compartidos del Módulo B.
-- **Código / Arquitectura generada:** `quantum.ts` clasifica cada hallazgo de criptografía en Shor, Grover, rota hoy o sin riesgo conocido (descarta falsos positivos; resueltos y descartados no cuentan, el inventario siempre cuenta), calcula el porcentaje vulnerable a Shor y arma la hoja de ruta: RSA < 2048, intercambio de claves a ML-KEM (primero, por «cosechar ahora, descifrar después»), claves RSA/EC de uso indefinido, firmas a ML-DSA y AES-128 a AES-256. `ExposureCard.tsx`, `MigrationRoadmap.tsx` y `CbomTable.tsx` muestran cada parte; `PqcPage.tsx` cubre carga, error, vacío y datos. `mock.json` sale de la salida real de CryptoEngine sobre el repo de demo. En `App.tsx` se reemplazó el placeholder por la vista. Se sumó `tests/engines/test_repo_demo.py`, que clona el repo de demo y verifica los hallazgos post-cuánticos y de dependencias (con `QUBITOR_TESTS_RED=1`).
-- **Validación y Corrección Humana:** Leí el código de `quantum.ts` y de los componentes. Corrí `pytest` en mi máquina (pasa, también el test del repo de demo con internet) y revisé la vista en el navegador: la exposición a Shor, la hoja de ruta y el inventario se ven bien con los datos del demo. Además, `tsc -b`, `eslint` y `vite build` dan sin errores, y con un script se comprobó la clasificación con los datos del demo (60 % vulnerable a Shor) y que un hallazgo resuelto deja de contar y un falso positivo desaparece. Limitación: la vista usa datos de ejemplo hasta que la API tenga los endpoints de escaneos.
+- **Código / Arquitectura generada:** `quantum.ts` clasifica cada hallazgo de criptografía en Shor, Grover, rota hoy o sin riesgo conocido (descarta falsos positivos; resueltos y descartados no cuentan, el inventario siempre cuenta), calcula el porcentaje vulnerable a Shor y arma la hoja de ruta: RSA < 2048, intercambio de claves a ML-KEM (primero, por «cosechar ahora, descifrar después»), claves RSA/EC de uso indefinido, firmas a ML-DSA y AES-128 a AES-256. `ExposureCard.tsx`, `MigrationRoadmap.tsx` y `CbomTable.tsx` muestran cada parte; `PqcPage.tsx` cubre carga, error, vacío y datos. `mock.json` sale de la salida real de CryptoEngine sobre el repo de demo. En `App.tsx` se reemplazó el placeholder por la vista. Agregado después, en el PR #37: `quantum.ts` también clasifica las reglas de certificados de `certs.py` (PR #36): la clave RSA de menos de 2048 bits va al paso de RSA débil, las claves de certificados al paso de firmas, y la firma SHA-1 y el certificado vencido quedan como rotos hoy. Se sumó `tests/engines/test_repo_demo.py`, que clona el repo de demo y verifica los hallazgos post-cuánticos y de dependencias (con `QUBITOR_TESTS_RED=1`).
+- **Validación y Corrección Humana:** Leí el código de `quantum.ts` y de los componentes. Corrí `pytest` en mi máquina (pasa, también el test del repo de demo con internet) y revisé la vista en el navegador: la exposición a Shor, la hoja de ruta y el inventario se ven bien con los datos del demo. Además, `tsc -b`, `eslint` y `vite build` dan sin errores, y con un script se comprobó la clasificación con los datos del demo (60 % vulnerable a Shor) y que un hallazgo resuelto deja de contar y un falso positivo desaparece. La clasificación de certificados (agregada después) se comprobó con un script y leí su código. Limitación: la vista usa datos de ejemplo hasta que la API tenga los endpoints de escaneos.
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** #24
 
-### [2026-11-08] Evolución del Risk Score en el Historial
+### [2026-11-08] Integración con GitHub: repos del usuario, conexión y clonado de privados (Módulo E)
 
-- **Problema abordado:** El plan pide que la pantalla «Historial» tenga un gráfico de evolución del Risk Score con los hallazgos nuevos y resueltos entre un escaneo y otro. La primera versión solo tenía la lista.
-- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` y una guía de visualización de datos (una sola serie sin leyenda, un solo eje, marcas finas, tooltip también con teclado).
-- **Código / Arquitectura generada:** Backend: `GET /repositories/{id}/history` agrega `new_findings` y `resolved_findings` a cada escaneo completado, comparando sus fingerprints con los del completado anterior; no cuenta los hallazgos info (inventario) y saltea los fallidos. Frontend: `RiskTrendChart.tsx` en SVG propio, sin librerías nuevas: línea del Risk Score en el tiempo con la grilla en los cortes de las notas, solo el último valor etiquetado, crosshair y tooltip con nota, nuevos, resueltos y fecha, navegable con las flechas. La tabla suma la columna «Nuevos / resueltos». 3 tests nuevos de backend.
-- **Validación y Corrección Humana:** Tests contra Postgres 16 para el conteo, incluidos los info y un fallido en el medio. Revisado en el navegador a 1440 px y 375 px, con el tooltip por mouse y por teclado, sin errores en consola. Los hallazgos nuevos y resueltos no se dibujan en un segundo eje (escala distinta): van en el tooltip y en la tabla. En el celular el gráfico no aparecía porque el ancho solo se medía con el primer aviso de `ResizeObserver`, que puede no llegar; ahora se mide al montarse.
-- **Responsable:** Juan Ignacio Wilt
-- **PR:** feat(history): evolución del Risk Score
+- **Problema abordado:** Hasta ahora solo se podía pegar la URL de un repo público. Hacía falta listar los repos de la cuenta de GitHub del usuario, conectar uno validándolo contra GitHub y clonar repos privados, sin exponer el token OAuth de GitHub ni confundirlo con el JWT de sesión de Clerk.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo el plan de la sección 4 (Módulo E) y las correcciones de seguridad de la Fase 1 (SEC-02 y SEC-09).
+- **Código / Arquitectura generada:**
+  - `app/integrations/github/`:
+    - `clerk.py`: token OAuth de GitHub desde la Backend API de Clerk;
+    - `client.py`: cliente de la API de GitHub con paginación por cabecera `Link` y errores propios;
+    - `routes.py`: `GET` y `POST /github/repositories`;
+    - `tokens.py`: el worker resuelve el token de quien conectó un repo privado;
+    - `settings.py` y `errors.py`.
+  - `app/worker/clone.py`: validación con `fullmatch`, entorno mínimo para Git y token opcional como cabecera HTTP por `GIT_CONFIG_*`.
+  - Migración `9c2f1a7d3b10`: `repositories.is_private` y `repositories.connected_by_user_id`.
+  - `job.py` pide el token antes de clonar.
+- **Validación y Corrección Humana:**
+  - Tests con GitHub y Clerk simulados, más los endpoints y la resolución del token contra Postgres 17:
+    - paginación, errores 401/403/404/429/500 y nombres inválidos sin llamar a GitHub;
+    - repos de más de 50 MB, privados no habilitados y sin permiso de lectura;
+    - aislamiento entre organizaciones, y que ninguna respuesta incluya el token.
+  - Se comprobó que Git no recibe `DATABASE_URL`, `REDIS_URL` ni `CLERK_SECRET_KEY`, y que el token no aparece en los argumentos del proceso.
+  - Con red: el clonado real de `octocat/Hello-World` funciona con el entorno mínimo; con un token inválido el error no lo filtra y no queda escrito en disco.
+  - La migración se probó con upgrade, downgrade y upgrade, y `alembic check` no encuentra diferencias.
+  - Se corrigió durante el desarrollo:
+    - importar la configuración desde `routes.py` hacía que el worker sin `DATABASE_URL` no arrancara; se movió a `settings.py` y se agregó un test que importa el job sin base;
+    - los clonados falsos de los tests del Módulo A no aceptaban el parámetro `token`, así que el job solo lo pasa cuando hay uno.
+  - Decisiones:
+    - 409 en lugar de 401 para «GitHub no vinculado», porque el frontend trata el 401 como sesión vencida;
+    - los repos privados quedan detrás de `GITHUB_PRIVATE_REPOS=false` hasta corregir la ejecución de Bandit (SEC-01), porque el worker necesitaría `CLERK_SECRET_KEY`.
+  - Limitaciones: Clerk exige credenciales propias de GitHub para leer el token; el nombre del proveedor (`oauth_github`/`github`) se prueba en ese orden porque la documentación no es consistente.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(github): listar, conectar y clonar los repos de GitHub del usuario
+
+### [2026-11-08] Triage de hallazgos con Gemini y resumen ejecutivo (Módulo E)
+
+- **Problema abordado:** Los motores devuelven hallazgos crudos. Hacía falta que Gemini indique falsos positivos, severidad real y remediación por hallazgo, y un resumen ejecutivo del repo, sin enviar secretos ni archivos completos y sin que una falla de la IA haga perder hallazgos o frene el escaneo.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), con la skill `gemini-api-dev` para usar el SDK y los modelos vigentes (Interactions API, `google-genai`), siguiendo la sección 5 del plan (response_schema) y el riesgo de cuota de la sección 10.
+- **Código / Arquitectura generada:**
+  - `app/ai/`:
+    - `masking.py`: segundo enmascarado antes de enviar;
+    - `gemini.py`: cliente con salida estructurada, `store=False` y errores de cuota, caída y respuesta inválida;
+    - `triage.py`: lotes de 15, tope de 60, validación por fingerprint, caché por contenido y límites de seguridad;
+    - `cache.py`: reutiliza evaluaciones del mismo repo desde la base;
+    - `summary.py`: resumen con Gemini o heurístico;
+    - `pipeline.py`: `apply_ai`, que no lanza;
+    - `routes.py`: `GET /scans/{id}/summary`.
+  - Integración en archivos del Módulo A: `ScanResult` suma `triage` y `summary` con valores por defecto, `SqlScanStore` guarda `findings.ai_*` y `scans.ai_summary`, y `job.py` llama a `apply_ai`. Migración `b41d7e2a9c55`.
+- **Validación y Corrección Humana:**
+  - Tests con Gemini simulado (y con Postgres 17 para caché, guardado y endpoint):
+    - lotes, tope y prioridad;
+    - secretos que no salen y fragmentos recortados a 5 líneas;
+    - respuestas inválidas y fingerprints ajenos o repetidos;
+    - cuota agotada, dos errores seguidos y límite de tiempo;
+    - caché por contenido, sin compartirse entre organizaciones;
+    - score recalculado y job completo con Gemini caído.
+  - Contra la API real se verificó que el SDK acepta los parámetros (con una clave inválida responde `API_KEY_INVALID`) y que su error de cuota trae `status_code = 429`.
+  - Riesgo identificado y mitigado: **prompt injection** desde el código escaneado. Un comentario en el repo podría pedirle a la IA que marque su propio hallazgo como falso positivo y baje el Risk Score. Además de indicarle que trate el fragmento como datos, se fijaron límites: un secreto nunca es falso positivo ni baja de severidad, y nada baja más de dos niveles.
+  - Se corrigió durante el desarrollo: los fixtures de los tests creaban las tablas antes de importar los modelos y el primer test fallaba si corría solo.
+  - Decisiones:
+    - caché en la base, en lugar de un servicio nuevo, porque reutiliza los escaneos del mismo repo;
+    - resumen heurístico como fallback, como pedía el Checkpoint 1;
+    - modelo por defecto `gemini-3.5-flash-lite` por la cuota gratuita.
+  - Limitaciones: no se probó con una clave real de Gemini, y los hallazgos más allá del tope de 60 quedan sin triage.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(ia): triage de hallazgos con Gemini y resumen ejecutivo
+
+### [2026-11-08] Escaneo en cada push: Worker de webhooks y endpoint interno (Módulo E)
+
+- **Problema abordado:** Lanzar un escaneo automáticamente en cada push sin un servidor propio esperando eventos (equivalente a Lambda + API Gateway), verificando que el evento venga de GitHub y sin crear una cola paralela a la del Módulo A.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), con la skill `workers-best-practices` de Cloudflare (`wrangler.jsonc`, tipos generados, logs y traces, secretos y comparación en tiempo constante).
+- **Código / Arquitectura generada:**
+  - `infra/webhook-worker/`: verifica `X-Hub-Signature-256`, responde `ping`, filtra los push a la rama por defecto, deduplica por `X-GitHub-Delivery` en KV y reenvía firmado a la API.
+  - `app/integrations/github/webhooks.py`: `POST /internal/github/push` verifica la firma HMAC con timestamp, deduplica con `SET NX` en Redis y encola con `enqueue_scan` del Módulo A, con el mismo criterio de «escaneo activo» que la API.
+- **Validación y Corrección Humana:**
+  - Decisión de arquitectura: la auditoría de la Fase 1 mostró que con `REDIS_URL` se puede encolar cualquier función de Python en el scan-worker, así que el Worker **no** publica directo en Redis. Llama a la API, que es la única dueña de la cola.
+  - Pruebas del Worker: 24 tests con vitest (firmas válidas e inválidas, eventos ignorados, duplicados, API caída o con error, cuerpo de más de 2 MiB y JSON inválido) y `wrangler deploy --dry-run` sin errores.
+  - Pruebas del endpoint: 22 tests contra Postgres 17 (firma vieja, otro secreto, cuerpo modificado, valores no canónicos, entregas repetidas, escaneo activo, cola caída y varias organizaciones con el mismo repo).
+  - La compatibilidad de la firma entre TypeScript y Python se fijó con un vector calculado en Python dentro de los tests del Worker.
+  - Se corrigió durante el desarrollo: el endpoint limpiaba con `strip()` una URL con salto de línea y la aceptaba; ahora rechaza todo valor no canónico.
+  - Limitaciones: no se desplegó el Worker ni se configuró un webhook real; KV es eventualmente consistente, por eso la API deduplica también.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(cloud): escaneo automático en cada push con un Worker de webhooks
+
+### [2026-11-08] Pantalla «Conectar repositorio» y tests del frontend (Módulo E)
+
+- **Problema abordado:** La ruta `/connect` era un placeholder. Hacía falta listar y buscar los repos de GitHub del usuario, conectar uno y lanzar su primer escaneo, y poder pegar la URL de un repo público. El frontend tampoco tenía ningún test.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` (hojas, botones primario y secundario, inputs, cuatro estados) y los componentes compartidos del Módulo B, con la skill `vercel-react-best-practices`.
+- **Código / Arquitectura generada:**
+  - `features/connect/`:
+    - `ConnectPage.tsx`: lista con búsqueda, «Cargar más», «Conectar y escanear» con `ScanProgress` y `useScanPolling`, y formulario de URL;
+    - `dataSource.ts`: API o mocks;
+    - `search.ts` y `types.ts`;
+    - `mock.json`.
+  - Vitest con jsdom y Testing Library (`vitest.config.ts`, `src/test/setup.ts`, `npm test`).
+  - `lib/api.ts` exporta `request`, y `App.tsx` publica la ruta.
+- **Validación y Corrección Humana:**
+  - 27 tests:
+    - búsqueda sin tildes ni mayúsculas;
+    - validación de la URL, igual a la del backend;
+    - paginación y conexión con escaneo;
+    - error 409 de GitHub no vinculado, error de la API y toast ante una conexión fallida.
+  - `eslint`, `tsc -b` y `vite build` sin errores; `npm audit --omit=dev` sin vulnerabilidades.
+  - Se corrigió durante el desarrollo: el texto de ayuda del campo de URL estaba dentro del `<label>` y pasaba a formar parte del nombre accesible del input; ahora está afuera y se asocia con `aria-describedby`.
+  - Decisión: la búsqueda filtra los repos ya cargados, porque la API de GitHub `/user/repos` no busca; si no hay resultados y quedan páginas, la pantalla lo avisa.
+  - Limitación: no se revisó en un navegador real, solo con Testing Library en jsdom.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(connect): pantalla Conectar repositorio
+
+### [2026-11-08] Panel de remediación y tarjeta de resumen ejecutivo (Módulo E)
+
+- **Problema abordado:** Mostrar la evaluación de la IA en todas las vistas de hallazgos sin que cada módulo la reimplemente, y presentar el resumen ejecutivo del escaneo arriba del dashboard general sin rediseñar el trabajo del Módulo B.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md` y los componentes compartidos.
+- **Código / Arquitectura generada:**
+  - `features/ai/`:
+    - `AiTriagePanel.tsx`: falso positivo, cambio de severidad, explicación, remediación en pasos y aviso de IA;
+    - `remediation.ts`;
+    - `ExecutiveSummaryCard.tsx`, `summaryData.ts`, `types.ts` y `mock.json`.
+  - Cambios mínimos en archivos compartidos:
+    - `FindingCard` usa el panel, así lo heredan las vistas de C y D;
+    - `DashboardPage` agrega la tarjeta antes de la nota.
+- **Validación y Corrección Humana:**
+  - 14 tests nuevos (41 en total del frontend):
+    - pasos numerados o con guiones;
+    - falso positivo, cambio de severidad y sin triage;
+    - texto de la IA escapado (un `<img onerror>` no se renderiza);
+    - tarjeta con IA, heurística, cuota agotada, sin resumen y con error;
+    - dashboard completo con la tarjeta integrada.
+  - `eslint`, `tsc -b` y `vite build` sin errores.
+  - Se corrigió durante el desarrollo: dentro de `FindingCard` el panel repetía la «Severidad del motor» que la tarjeta ya mostraba; se agregó `showSeverityChange` para ocultarla ahí.
+  - Hubo que sumar un `matchMedia` mínimo al setup de los tests, porque jsdom no lo trae y el dashboard lo usa.
+  - Limitación: no se revisó en un navegador real.
+- **Responsable:** Valentino Chiappini
+- **PR:** feat(ia): panel de remediación y resumen ejecutivo en el dashboard
+
+### [2026-11-08] Botones de descarga del reporte y del CBOM (frontend/src/features/pqc)
+
+- **Problema abordado:** El reporte y el CBOM de cada escaneo quedan en R2 (PR #30) y la API los entrega con URLs firmadas en `GET /scans/{id}/report` (rama `feature/scan-report`, Módulo A). Faltaba poder descargarlos desde las vistas.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md`.
+- **Código / Arquitectura generada:** `ReportDownloadButton.tsx` pide las URLs recién al hacer clic, porque vencen a los pocos minutos, y abre la del archivo elegido; como R2 lo guarda como descarga, el navegador lo baja sin salir de la página. Si el escaneo no tiene el archivo o el almacenamiento no está disponible (503), muestra un aviso. Con datos de ejemplo el botón no aparece. La vista post-cuántica ofrece «Descargar CBOM (CycloneDX)» y la de Dependencias, «Descargar reporte (PDF)»; el PDF necesita que la API devuelva `pdf_url`. En el cliente compartido (`lib/api.ts` y `types/Scan.ts`, Módulo B) se sumó `getScanReport` con el formato de la respuesta de la API.
+- **Validación y Corrección Humana:** Leí el código de `ReportDownloadButton.tsx` y de los cambios en `lib/api.ts`, `types/Scan.ts` y las páginas. Además, `tsc -b`, `eslint` y `vite build` sin errores. El formato de la respuesta se comparó con `ScanReportOut` del backend. Falta probarlo con la API desplegada y R2 configurado.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #37 (iba en el #24, pero quedó afuera del merge)
+
+### [2026-11-08] Urgencia de migración con la desigualdad de Mosca (frontend/src/features/pqc)
+
+- **Problema abordado:** El porcentaje vulnerable a Shor no dice cuán urgente es migrar. La desigualdad de Mosca lo responde: si los años que algo tiene que seguir protegido (X) más los que lleva migrar (Y) superan los que faltan para una computadora cuántica relevante (Z), ya está en riesgo hoy.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), siguiendo `DESIGN.md`.
+- **Código / Arquitectura generada:** `mosca.ts` separa los usos activos vulnerables a Shor en dos grupos: datos cifrados e intercambio de claves (incluye las claves de uso indefinido, el caso más exigente) y firmas, cada uno con su propio X. Calcula X + Y, el margen Z − (X + Y) y qué hallazgos quedan en riesgo. Valores por defecto: 10 años para datos, 2 para firmas, 5 para migrar y Z hasta 2035, el año en que NIST deja de permitir RSA y curvas elípticas (NIST IR 8547). `MoscaCard.tsx` permite cambiar X, Y y Z y muestra el resultado de cada grupo; `CbomTable.tsx` marca los usos en riesgo. `quantum.ts` exporta `shorUse` para saber para qué se usa cada algoritmo.
+- **Validación y Corrección Humana:** Revisé la tarjeta de Mosca en el navegador con los datos del demo. Además, `tsc -b`, `eslint` y `vite build` dan sin errores, y con un script se comprobó con los datos del demo: con los valores por defecto los tres usos de Shor quedan en riesgo (15 > 9); con X = 2 e Y = 3 quedan con margen; una firma ECDSA va al grupo de firmas; un hallazgo resuelto no cuenta; y los años fuera de rango o vacíos se acotan entre 0 y 50.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #32
+
+### [2026-11-08] Firmas ECDSA en JavaScript y curvas Ed25519 / X25519 (crypto/pqc.py)
+
+- **Problema abordado:** El detector post-cuántico no reconocía Ed25519, Ed448, X25519 ni X448, que son las curvas más usadas hoy y también las rompe Shor. Además, en JavaScript una clave EC que se usa para firmar (como la de `app/signing.js` del repo de demo) quedaba como «clave de uso indefinido», así que la hoja de ruta no la mandaba a ML-DSA.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** Regla nueva `crypto.pqc.eddsa` (medium) para Ed25519 y Ed448; X25519 y X448 se reportan como `crypto.pqc.ecdh`, porque son ECDH sobre otras curvas. En Python se detecta `Ed25519PrivateKey.generate()` y equivalentes de `cryptography`; en JavaScript, `generateKeyPair('ed25519' | 'ed448' | 'x25519' | 'x448')`. Si un archivo JavaScript genera una clave EC y además firma o verifica (`crypto.sign`, `crypto.verify`, `createSign`, `createVerify`), la clave se reporta como `crypto.pqc.ecdsa`. En la vista, `quantum.ts` manda `crypto.pqc.eddsa` al paso de firmas; el mock y el test del repo de demo se actualizaron.
+- **Validación y Corrección Humana:** Leí los cambios en `pqc.py` y corrí `pytest` en mi máquina: pasan los 9 tests nuevos (positivos y negativos: cargar una clave Ed25519 sin generarla, firmar dentro de un comentario, firmar con una clave RSA) y el test del repo de demo con `QUBITOR_TESTS_RED=1`. En la vista revisé que la firma de `app/signing.js` ahora cae en el paso «Migrar las firmas a ML-DSA». `tsc -b`, `eslint` y `vite build` dan sin errores. Limitación: en JavaScript la firma se detecta por archivo; si la clave EC se genera en un archivo y se usa para firmar en otro, sigue apareciendo como clave de uso indefinido.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** #29 (se mergeó a la rama del #24 cuando esa ya estaba en `main`; llega a `main` con el #37)
 
 ### [PLANTILLA — completar en próximas entradas]
 

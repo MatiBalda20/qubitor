@@ -1,5 +1,6 @@
-import { ExternalLink, Sparkles } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { AiTriagePanel } from '@/features/ai/AiTriagePanel'
 import { ENGINE_LABEL } from '@/lib/labels'
 import { cn } from '@/lib/cn'
 import { effectiveSeverity, isInformational } from '@/lib/risk'
@@ -64,26 +65,8 @@ export function FindingCard({ finding, actions, hideHeader = false, className }:
 
       {finding.snippet && <CodeSnippet code={finding.snippet} line={finding.line} filePath={finding.file_path} />}
 
-      {finding.triage && (
-        <section aria-label="Evaluación de la IA" className="space-y-3 rounded-sm bg-civic-soft/60 p-4 ring-1 ring-civic/10">
-          <div className="flex flex-wrap items-center gap-2">
-            <Sparkles className="size-4 text-civic" strokeWidth={1.75} aria-hidden="true" />
-            <h4 className="text-sm font-semibold text-ink">Evaluación de la IA</h4>
-            {finding.triage.is_false_positive && (
-              <span className="rounded-xs bg-stamp/10 px-1.5 py-0.5 text-xs font-semibold text-stamp">
-                Posible falso positivo
-              </span>
-            )}
-          </div>
-          <p className="max-w-[75ch] text-sm text-ink-2">{finding.triage.explanation}</p>
-          {finding.triage.remediation && (
-            <div>
-              <p className="field-label mb-1">Remediación sugerida</p>
-              <p className="max-w-[75ch] text-sm whitespace-pre-line text-ink">{finding.triage.remediation}</p>
-            </div>
-          )}
-        </section>
-      )}
+      {/* Panel de remediación del Módulo E; la severidad del motor ya está en los datos de arriba. */}
+      <AiTriagePanel finding={finding} showSeverityChange={false} />
 
       {actions && <footer className="pt-1">{actions}</footer>}
     </article>

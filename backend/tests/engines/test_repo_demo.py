@@ -37,7 +37,7 @@ def test_detecta_la_criptografia_post_cuantica_plantada(repo_demo):
         ("crypto.pqc.ecdh", "app/keys.py", 15, "medium"),
         ("crypto.pqc.aes-128", "app/keys.py", 20, "low"),
         ("crypto.pqc.inventory.hash", "app/keys.py", 25, "info"),
-        ("crypto.pqc.ec-keygen", "app/signing.js", 5, "medium"),
+        ("crypto.pqc.ecdsa", "app/signing.js", 5, "medium"),
     }
 
 

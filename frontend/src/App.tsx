@@ -5,6 +5,7 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { ModulePlaceholder } from '@/components/layout/ModulePlaceholder'
 import SignInPage from '@/features/auth/SignInPage'
 import SsoCallbackPage from '@/features/auth/SsoCallbackPage'
+import ConnectPage from '@/features/connect/ConnectPage'
 import DashboardPage from '@/features/dashboard/DashboardPage'
 import DependenciesPage from '@/features/dependencies/DependenciesPage'
 import HistoryPage from '@/features/history/HistoryPage'
@@ -40,10 +41,7 @@ export default function App() {
         <Route path="pqc" element={<PqcPage />} />
         <Route path="dependencies" element={<DependenciesPage />} />
         <Route path="history" element={<HistoryPage />} />
-        <Route
-          path="connect"
-          element={<ModulePlaceholder title="Conectar repositorio" owner="Módulo E" folder="features/connect" />}
-        />
+        <Route path="connect" element={<ConnectPage />} />
         <Route
           path="*"
           element={

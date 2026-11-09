@@ -81,6 +81,14 @@ class FindingUpdate(BaseModel):
     status: FindingStatus
 
 
+class ScanReportOut(BaseModel):
+    """URLs firmadas para descargar los archivos del escaneo; null si no existe."""
+
+    report_url: str | None
+    cbom_url: str | None
+    expires_in: int
+
+
 def repository_out(repo: Repository) -> RepositoryOut:
     return RepositoryOut(
         id=str(repo.id),

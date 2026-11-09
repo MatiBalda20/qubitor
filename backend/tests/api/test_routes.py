@@ -230,6 +230,67 @@ def test_historial_del_mas_nuevo_al_mas_viejo(client, db):
     assert [s["id"] for s in historial] == [nuevo, viejo]
 
 
+# Evolución entre escaneos
+
+
+def _escaneo_con(client, db, repo_id, *fingerprints, info=()):
+    """Escaneo completado con hallazgos de esos fingerprints (más algunos info)."""
+    from app.models.models import Finding, Scan, ScanStatus
+
+    scan_id = _escanear(client, repo_id).json()["id"]
+    with db() as session, session.begin():
+        scan = session.get(Scan, uuid.UUID(scan_id))
+        scan.status, scan.started_at, scan.finished_at = ScanStatus.COMPLETED, datetime.now(timezone.utc), datetime.now(timezone.utc)
+        scan.risk_score, scan.grade = 80.0, "B"
+        for fp in fingerprints:
+            session.add(Finding(scan_id=scan.id, fingerprint=fp, engine="sast", rule_id="r", title="t",
+                                severity=Severity.HIGH, file_path="a.py", line=1, snippet="s", description="d"))
+        for fp in info:
+            session.add(Finding(scan_id=scan.id, fingerprint=fp, engine="crypto", rule_id="i", title="t",
+                                severity=Severity.INFO, file_path="a.py", line=1, snippet="s", description="d"))
+    return scan_id
+
+
+def test_historial_cuenta_hallazgos_nuevos_y_resueltos(client, db):
+    repo = _conectar(client).json()["id"]
+    primero = _escaneo_con(client, db, repo, "a", "b", "c")
+    segundo = _escaneo_con(client, db, repo, "b", "c", "d", "e", info=["inv1"])
+    tercero = _escaneo_con(client, db, repo, "e", info=["inv2"])
+
+    historial = {s["id"]: s for s in client.get(f"/repositories/{repo}/history", headers=headers()).json()}
+
+    assert (historial[primero]["new_findings"], historial[primero]["resolved_findings"]) == (None, None)
+    assert (historial[segundo]["new_findings"], historial[segundo]["resolved_findings"]) == (2, 1)
+    # Los info (inventario) no cuentan como nuevos ni resueltos.
+    assert (historial[tercero]["new_findings"], historial[tercero]["resolved_findings"]) == (0, 3)
+
+
+def test_los_escaneos_fallidos_no_cortan_la_comparacion(client, db):
+    from app.models.models import Scan, ScanStatus
+
+    repo = _conectar(client).json()["id"]
+    _escaneo_con(client, db, repo, "a", "b")
+    fallido = _escanear(client, repo).json()["id"]
+    with db() as session, session.begin():
+        session.get(Scan, uuid.UUID(fallido)).status = ScanStatus.FAILED
+    ultimo = _escaneo_con(client, db, repo, "b", "c")
+
+    historial = {s["id"]: s for s in client.get(f"/repositories/{repo}/history", headers=headers()).json()}
+
+    assert (historial[fallido]["new_findings"], historial[fallido]["resolved_findings"]) == (None, None)
+    assert (historial[ultimo]["new_findings"], historial[ultimo]["resolved_findings"]) == (1, 1)
+
+
+def test_un_solo_escaneo_no_tiene_comparacion(client, db):
+    repo = _conectar(client).json()["id"]
+    unico = _escaneo_con(client, db, repo, "a")
+
+    [scan] = client.get(f"/repositories/{repo}/history", headers=headers()).json()
+
+    assert scan["id"] == unico
+    assert (scan["new_findings"], scan["resolved_findings"]) == (None, None)
+
+
 # Hallazgos
 
 
@@ -343,62 +404,104 @@ def test_un_escaneo_reciente_en_curso_no_se_corta(client, db, encolados):
     assert _escanear(client, repo["id"]).json()["id"] == en_curso
 
 
-# Evolución entre escaneos
+# Reporte en R2 (Módulo D)
 
 
-def _escaneo_con(client, db, repo_id, *fingerprints, info=()):
-    """Escaneo completado con hallazgos de esos fingerprints (más algunos info)."""
-    from app.models.models import Finding, Scan, ScanStatus
+class _ClienteS3Falso:
+    """Lo mínimo de boto3 que usa ReportStorage, con los archivos que existen en el bucket."""
 
-    scan_id = _escanear(client, repo_id).json()["id"]
-    with db() as session, session.begin():
-        scan = session.get(Scan, uuid.UUID(scan_id))
-        scan.status, scan.started_at, scan.finished_at = ScanStatus.COMPLETED, datetime.now(timezone.utc), datetime.now(timezone.utc)
-        scan.risk_score, scan.grade = 80.0, "B"
-        for fp in fingerprints:
-            session.add(Finding(scan_id=scan.id, fingerprint=fp, engine="sast", rule_id="r", title="t",
-                                severity=Severity.HIGH, file_path="a.py", line=1, snippet="s", description="d"))
-        for fp in info:
-            session.add(Finding(scan_id=scan.id, fingerprint=fp, engine="crypto", rule_id="i", title="t",
-                                severity=Severity.INFO, file_path="a.py", line=1, snippet="s", description="d"))
+    def __init__(self, existentes):
+        self.existentes = set(existentes)
+        self.pedidos = []
+
+    def head_object(self, Bucket, Key):
+        self.pedidos.append(Key)
+        if Key not in self.existentes:
+            error = Exception("Not Found")
+            error.response = {"Error": {"Code": "404"}, "ResponseMetadata": {"HTTPStatusCode": 404}}
+            raise error
+
+    def generate_presigned_url(self, operacion, Params, ExpiresIn):
+        return f"https://r2.example/{Params['Key']}?expira={ExpiresIn}"
+
+
+@pytest.fixture
+def bucket(monkeypatch):
+    from app.storage.reports import ReportStorage
+
+    def usar(*existentes):
+        cliente = _ClienteS3Falso(existentes)
+        monkeypatch.setattr(routes, "get_report_storage", lambda: ReportStorage(cliente, "qubitor-reportes"))
+        return cliente
+
+    return usar
+
+
+def _escaneo_terminado(client, db):
+    repo = _conectar(client).json()
+    scan_id = _escanear(client, repo["id"]).json()["id"]
+    _terminar(db, scan_id)
     return scan_id
 
 
-def test_historial_cuenta_hallazgos_nuevos_y_resueltos(client, db):
-    repo = _conectar(client).json()["id"]
-    primero = _escaneo_con(client, db, repo, "a", "b", "c")
-    segundo = _escaneo_con(client, db, repo, "b", "c", "d", "e", info=["inv1"])
-    tercero = _escaneo_con(client, db, repo, "e", info=["inv2"])
+def test_reporte_devuelve_las_urls_firmadas(client, db, bucket):
+    scan_id = _escaneo_terminado(client, db)
+    bucket(f"reports/{scan_id}/report.json", f"reports/{scan_id}/cbom.json")
 
-    historial = {s["id"]: s for s in client.get(f"/repositories/{repo}/history", headers=headers()).json()}
+    respuesta = client.get(f"/scans/{scan_id}/report", headers=headers())
 
-    assert (historial[primero]["new_findings"], historial[primero]["resolved_findings"]) == (None, None)
-    assert (historial[segundo]["new_findings"], historial[segundo]["resolved_findings"]) == (2, 1)
-    # Los info (inventario) no cuentan como nuevos ni resueltos.
-    assert (historial[tercero]["new_findings"], historial[tercero]["resolved_findings"]) == (0, 3)
-
-
-def test_los_escaneos_fallidos_no_cortan_la_comparacion(client, db):
-    from app.models.models import Scan, ScanStatus
-
-    repo = _conectar(client).json()["id"]
-    _escaneo_con(client, db, repo, "a", "b")
-    fallido = _escanear(client, repo).json()["id"]
-    with db() as session, session.begin():
-        session.get(Scan, uuid.UUID(fallido)).status = ScanStatus.FAILED
-    ultimo = _escaneo_con(client, db, repo, "b", "c")
-
-    historial = {s["id"]: s for s in client.get(f"/repositories/{repo}/history", headers=headers()).json()}
-
-    assert (historial[fallido]["new_findings"], historial[fallido]["resolved_findings"]) == (None, None)
-    assert (historial[ultimo]["new_findings"], historial[ultimo]["resolved_findings"]) == (1, 1)
+    assert respuesta.status_code == 200
+    assert respuesta.json() == {
+        "report_url": f"https://r2.example/reports/{scan_id}/report.json?expira=600",
+        "cbom_url": f"https://r2.example/reports/{scan_id}/cbom.json?expira=600",
+        "expires_in": 600,
+    }
 
 
-def test_un_solo_escaneo_no_tiene_comparacion(client, db):
-    repo = _conectar(client).json()["id"]
-    unico = _escaneo_con(client, db, repo, "a")
+def test_reporte_sin_archivos_en_el_bucket_devuelve_null(client, db, bucket):
+    scan_id = _escaneo_terminado(client, db)
+    bucket(f"reports/{scan_id}/report.json")
 
-    [scan] = client.get(f"/repositories/{repo}/history", headers=headers()).json()
+    reporte = client.get(f"/scans/{scan_id}/report", headers=headers()).json()
 
-    assert scan["id"] == unico
-    assert (scan["new_findings"], scan["resolved_findings"]) == (None, None)
+    assert reporte["report_url"] and reporte["cbom_url"] is None
+
+
+def test_reporte_de_otra_organizacion_no_toca_el_bucket(client, db, bucket):
+    scan_id = _escaneo_terminado(client, db)
+    cliente = bucket(f"reports/{scan_id}/report.json")
+
+    respuesta = client.get(f"/scans/{scan_id}/report", headers=headers(**OTRA_ORG))
+
+    assert respuesta.status_code == 404
+    assert cliente.pedidos == []
+
+
+def test_reporte_sin_r2_configurado_responde_503(client, db, monkeypatch):
+    scan_id = _escaneo_terminado(client, db)
+    monkeypatch.setattr(routes, "get_report_storage", lambda: None)
+
+    respuesta = client.get(f"/scans/{scan_id}/report", headers=headers())
+
+    assert respuesta.status_code == 503
+    assert "no están configurados" in respuesta.json()["detail"]
+
+
+@pytest.mark.parametrize("donde", ["al_crear_el_cliente", "al_consultar"])
+def test_reporte_si_el_bucket_falla_responde_503(client, db, monkeypatch, donde):
+    from app.storage.reports import ReportStorage
+
+    scan_id = _escaneo_terminado(client, db)
+
+    class ClienteCaido(_ClienteS3Falso):
+        def head_object(self, Bucket, Key):
+            raise ConnectionError("R2 no responde")
+
+    def storage():
+        if donde == "al_crear_el_cliente":
+            raise ValueError("Invalid endpoint")
+        return ReportStorage(ClienteCaido([]), "qubitor-reportes")
+
+    monkeypatch.setattr(routes, "get_report_storage", storage)
+
+    assert client.get(f"/scans/{scan_id}/report", headers=headers()).status_code == 503
