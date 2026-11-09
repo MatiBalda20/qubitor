@@ -126,6 +126,10 @@ _DSA_KEYGEN = _shor_rule(
     "crypto.pqc.dsa-keygen", "DSA",
     "Generación de clave DSA vulnerable a computación cuántica",
 )
+_EDDSA = _shor_rule(
+    "crypto.pqc.eddsa", "EdDSA",
+    "Firma EdDSA (Ed25519 / Ed448) vulnerable a computación cuántica",
+)
 
 _ASYMMETRIC = "cryptography.hazmat.primitives.asymmetric"
 _CIPHERS = "cryptography.hazmat.primitives.ciphers"
@@ -150,6 +154,12 @@ CALL_RULES: dict[str, _Rule | Callable[[ast.Call], _Rule]] = {
     "rsa.newkeys": _RSA_KEYGEN,
     # ecdsa
     "ecdsa.SigningKey.generate": _ECDSA,
+    # cryptography: curvas de Edwards y Montgomery (también las rompe Shor).
+    # X25519 y X448 son ECDH sobre otras curvas.
+    f"{_ASYMMETRIC}.ed25519.Ed25519PrivateKey.generate": _EDDSA,
+    f"{_ASYMMETRIC}.ed448.Ed448PrivateKey.generate": _EDDSA,
+    f"{_ASYMMETRIC}.x25519.X25519PrivateKey.generate": _ECDH,
+    f"{_ASYMMETRIC}.x448.X448PrivateKey.generate": _ECDH,
     # cryptography: cifrado simétrico e inventario
     f"{_CIPHERS}.algorithms.AES128": _AES_128,
     f"{_CIPHERS}.algorithms.AES256": _aes_inventory("AES-256"),
@@ -186,6 +196,10 @@ _JS_KEY_PAIR_TYPES = {
     "ec": _EC_KEYGEN,
     "dsa": _DSA_KEYGEN,
     "dh": _DH,
+    "ed25519": _EDDSA,
+    "ed448": _EDDSA,
+    "x25519": _ECDH,
+    "x448": _ECDH,
 }
 
 # Nombres de hash de Node.js → nombre para el reporte. MD5 y SHA-1 son del Módulo C.
@@ -219,6 +233,10 @@ def _js_hash(match: re.Match) -> _Rule | None:
 
 
 _QUOTE = r"""['"`]"""
+
+# Firmar o verificar con el módulo crypto de Node.js. Si el archivo genera una
+# clave EC y además firma, esa clave es de ECDSA: va a ML-DSA, no a ML-KEM.
+_JS_SIGNING = re.compile(r"\bcrypto\.(?:sign|verify)\s*\(|\bcreate(?:Sign|Verify)\s*\(")
 
 # Cada regla: patrón a buscar → regla que dispara, o una función que mira lo
 # encontrado y elige la regla (igual que CALL_RULES para Python).
@@ -365,12 +383,15 @@ def _int_argument(node: ast.Call, position: int, keyword: str) -> int | None:
 
 def _scan_js_source(source: str, file_path: str) -> list[Finding]:
     code = _strip_js_comments(source)
+    signs = _JS_SIGNING.search(code) is not None
     findings: list[Finding] = []
     for pattern, rule in JS_RULES:
         for match in pattern.finditer(code):
             found = rule(match) if callable(rule) else rule
             if found is None:
                 continue
+            if found is _EC_KEYGEN and signs:
+                found = _ECDSA
             line = code.count("\n", 0, match.start()) + 1
             # Solo hasta el nombre del algoritmo: lo que sigue (claves, IVs)
             # puede ser secreto y no debe quedar en el reporte.
