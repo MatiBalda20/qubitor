@@ -244,6 +244,14 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Correcciones de la revisión antes del PR:** Si el worker se caía o el trabajo vencía, el escaneo quedaba en curso para siempre y el repo no se podía volver a escanear; ahora, pasados 30 minutos, se marca como fallido y se lanza uno nuevo. Además, `Acme/Demo` y `acme/demo` se conectaban como dos repos distintos. Ambos casos se reprodujeron con tests antes de corregirlos. Queda como limitación que dos pedidos simultáneos para el mismo repo pueden crear dos escaneos.
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat(api): endpoints REST y autenticación con Clerk
+### [2026-11-08] Endpoint de descarga del reporte del escaneo
+
+- **Problema abordado:** El worker guarda el reporte y el CBOM de cada escaneo en Cloudflare R2 (PR #30, Módulo D), pero el frontend no tenía cómo descargarlos. Hacía falta un endpoint que entregue URLs firmadas sin que nadie pueda pedir los archivos de otra organización.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), a pedido de Valentina, reutilizando `get_report_storage` y `signed_url` de su PR.
+- **Código / Arquitectura generada:** `GET /scans/{id}/report` en `app/api/routes.py` devuelve `{report_url, cbom_url, expires_in}` (`ScanReportOut` en `schemas.py`). Usa el mismo `_get_scan` que los demás endpoints, así que un escaneo de otra organización responde 404 antes de consultar el bucket. Si un archivo no existe, su URL es `null`; si R2 no está configurado o no responde, 503. 6 tests nuevos.
+- **Validación y Corrección Humana:** Probado contra Postgres 16 en Docker con la clase `ReportStorage` real y un cliente S3 falso. Se comprobó que el test de aislamiento falla si se quita el chequeo de organización. Se cubre también el caso en que crear el cliente de R2 falla (por ejemplo, un endpoint inválido), que en la PR #30 todavía puede lanzar desde `archive_scan`.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat(api): endpoint para descargar el reporte del escaneo
 ### [2026-11-08] Guardado del escaneo en Postgres (SqlScanStore)
 
 - **Problema abordado:** El scan-worker solo registraba los resultados en el log. Hacía falta guardar el estado del escaneo, el Risk Score y los hallazgos en Supabase, con los modelos de la PR #18, para que la API y el frontend muestren escaneos reales.
