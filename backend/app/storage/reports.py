@@ -3,8 +3,9 @@
 Al terminar un escaneo se guardan dos archivos JSON:
 
 - `reports/<scan_id>/report.json`: el resultado completo (Risk Score y hallazgos).
-- `reports/<scan_id>/cbom.json`: el inventario criptográfico (CBOM), solo los
-  hallazgos del motor de criptografía.
+- `reports/<scan_id>/cbom.json`: el inventario criptográfico (CBOM) en formato
+  CycloneDX 1.6, solo los hallazgos del motor de criptografía.
+- `reports/<scan_id>/report.pdf`: el reporte para leer o compartir.
 
 El bucket es privado: la interfaz los descarga con URLs firmadas que vencen.
 Sin las variables `R2_*` no se guarda nada y el escaneo sigue igual, como el
@@ -21,11 +22,22 @@ from typing import Any, Literal, Protocol
 
 from app.engines.base import Finding, Severity
 from app.orchestrator.pipeline import ScanResult
+from app.storage.cyclonedx import build_cyclonedx
+from app.storage.pdf import build_pdf
 
 logger = logging.getLogger(__name__)
 
-ReportKind = Literal["report", "cbom"]
-REPORT_KINDS: tuple[ReportKind, ...] = ("report", "cbom")
+ReportKind = Literal["report", "cbom", "pdf"]
+REPORT_KINDS: tuple[ReportKind, ...] = ("report", "cbom", "pdf")
+
+# Nombre en el bucket, tipo de contenido y nombre con el que se descarga cada archivo.
+_KEY_NAMES = {"report": "report.json", "cbom": "cbom.json", "pdf": "report.pdf"}
+_CONTENT_TYPES = {
+    "report": "application/json; charset=utf-8",
+    "cbom": "application/vnd.cyclonedx+json; charset=utf-8",
+    "pdf": "application/pdf",
+}
+_FILE_NAMES = {"report": "report.json", "cbom": "cbom.cdx.json", "pdf": "report.pdf"}
 
 # Lo que dura una URL firmada. Corto: alcanza para descargar, no para compartir.
 SIGNED_URL_SECONDS = 10 * 60
@@ -62,28 +74,8 @@ def build_report(scan_id: str, repo_url: str, commit_sha: str, result: ScanResul
 
 
 def build_cbom(scan_id: str, repo_url: str, commit_sha: str, result: ScanResult) -> dict:
-    """Inventario criptográfico: todo uso de criptografía, también el seguro."""
-    entries = [
-        {
-            "algorithm": _algorithm(finding),
-            "rule_id": finding.rule_id,
-            "severity": finding.severity.value,
-            "file_path": finding.file_path,
-            "line": finding.line,
-            "fingerprint": fp,
-        }
-        for fp, finding in result.findings.items()
-        if finding.engine == "crypto"
-    ]
-    entries.sort(key=lambda entry: (entry["file_path"], entry["line"] or 0))
-    return {
-        "scan_id": scan_id,
-        "repository_url": repo_url,
-        "commit_sha": commit_sha,
-        "generated_at": _now(),
-        "algorithms": sorted({entry["algorithm"] for entry in entries}),
-        "usages": entries,
-    }
+    """Inventario criptográfico en CycloneDX 1.6: todo uso de criptografía, también el seguro."""
+    return build_cyclonedx(scan_id, repo_url, commit_sha, result.findings)
 
 
 class ReportStorage:
@@ -92,13 +84,16 @@ class ReportStorage:
         self.bucket = bucket
 
     def save(self, scan_id: str, kind: ReportKind, content: dict) -> None:
+        self.save_bytes(scan_id, kind, json.dumps(content, ensure_ascii=False, indent=2).encode("utf-8"))
+
+    def save_bytes(self, scan_id: str, kind: ReportKind, body: bytes) -> None:
         self.client.put_object(
             Bucket=self.bucket,
             Key=report_key(scan_id, kind),
-            Body=json.dumps(content, ensure_ascii=False, indent=2).encode("utf-8"),
-            ContentType="application/json; charset=utf-8",
+            Body=body,
+            ContentType=_CONTENT_TYPES[kind],
             # Al abrir la URL firmada el navegador descarga el archivo con este nombre.
-            ContentDisposition=f'attachment; filename="qubitor-{scan_id}-{kind}.json"',
+            ContentDisposition=f'attachment; filename="qubitor-{scan_id}-{_FILE_NAMES[kind]}"',
         )
 
     def signed_url(self, scan_id: str, kind: ReportKind, expires: int = SIGNED_URL_SECONDS) -> str | None:
@@ -125,7 +120,7 @@ def report_key(scan_id: str, kind: ReportKind) -> str:
         raise ValueError(f"Id de escaneo inválido: {scan_id!r}")
     if kind not in REPORT_KINDS:
         raise ValueError(f"Tipo de reporte inválido: {kind!r}")
-    return f"reports/{scan_id}/{kind}.json"
+    return f"reports/{scan_id}/{_KEY_NAMES[kind]}"
 
 
 def get_report_storage() -> ReportStorage | None:
@@ -156,10 +151,11 @@ def get_report_storage() -> ReportStorage | None:
 
 def archive_scan(scan_id: str, repo_url: str, commit_sha: str, result: ScanResult,
                  storage: ReportStorage | None = None) -> bool:
-    """Guarda el reporte y el CBOM del escaneo. Devuelve True si se guardaron.
+    """Guarda el reporte, el CBOM y el PDF del escaneo. Devuelve True si se guardaron los JSON.
 
     No lanza excepciones: si el bucket falla, el escaneo ya está en la base y
-    no tiene que quedar como fallido por eso. Solo se registra en el log.
+    no tiene que quedar como fallido por eso. Solo se registra en el log. Si
+    falla solo el PDF, los JSON quedan guardados igual.
     """
     storage = storage or get_report_storage()
     if storage is None:
@@ -170,6 +166,10 @@ def archive_scan(scan_id: str, repo_url: str, commit_sha: str, result: ScanResul
     except Exception:
         logger.exception("Escaneo %s: no se pudo guardar el reporte en el bucket", scan_id)
         return False
+    try:
+        storage.save_bytes(scan_id, "pdf", build_pdf(scan_id, repo_url, commit_sha, result))
+    except Exception:
+        logger.exception("Escaneo %s: no se pudo generar o guardar el PDF", scan_id)
     return True
 
 
@@ -188,11 +188,6 @@ def _finding_dict(fp: str, finding: Finding) -> dict:
         "cve": finding.cve,
         "metadata": finding.metadata,
     }
-
-
-def _algorithm(finding: Finding) -> str:
-    algorithm = finding.metadata.get("algorithm")
-    return algorithm if isinstance(algorithm, str) else finding.title
 
 
 def _status_code(error: Exception) -> int | None:

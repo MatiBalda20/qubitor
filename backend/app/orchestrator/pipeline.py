@@ -6,7 +6,7 @@ normalización y el score) y la persistencia los coordina el scan-worker.
 """
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.engines.base import Engine, Finding
 from app.orchestrator.normalize import deduplicate
@@ -22,6 +22,9 @@ class ScanResult:
     grade: str
     duration_seconds: float
     engine_count: int
+    # Módulo E: evaluación de la IA por fingerprint y resumen ejecutivo. Vacíos sin triage.
+    triage: dict = field(default_factory=dict)
+    summary: dict | None = None
 
     @property
     def failed(self) -> bool:

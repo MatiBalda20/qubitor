@@ -51,6 +51,9 @@ class Repository(Base):
     url = Column(String, nullable=False)
     default_branch = Column(String, default="main")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc))
+    # Módulo E: un repo privado se clona con el token de GitHub de quien lo conectó.
+    is_private = Column(Boolean, nullable=False, default=False, server_default="false")
+    connected_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     organization = relationship("Organization", back_populates="repositories")
     scans = relationship("Scan", back_populates="repository", cascade="all, delete-orphan")
@@ -74,6 +77,8 @@ class Scan(Base):
     grade = Column(String(1), nullable=True)
     engine_errors = Column(JSONB, nullable=True)
     error = Column(Text, nullable=True)
+    # Módulo E: resumen ejecutivo generado al final del escaneo (Gemini o heurístico).
+    ai_summary = Column(JSONB, nullable=True)
 
     repository = relationship("Repository", back_populates="scans")
     findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")

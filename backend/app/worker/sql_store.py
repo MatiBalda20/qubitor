@@ -58,6 +58,7 @@ class SqlScanStore:
                     cve=finding.cve,
                     metadata_=_clean(finding.metadata),
                     status=FindingStatus.OPEN,
+                    **_triage_columns(result.triage.get(fingerprint)),
                 )
                 for fingerprint, finding in result.findings.items()
             )
@@ -66,6 +67,7 @@ class SqlScanStore:
             scan.risk_score = result.risk_score
             scan.grade = result.grade
             scan.engine_errors = _clean(result.errors) or None
+            scan.ai_summary = _clean(result.summary)
             scan.error = None
             scan.finished_at = _now()
 
@@ -88,6 +90,18 @@ def _get_scan(session: Session, scan_id: str) -> Scan | None:
     if scan is None:
         logger.warning("El escaneo %s no existe en la base: no se guarda el resultado", scan_id)
     return scan
+
+
+def _triage_columns(evaluation) -> dict:
+    """Columnas ai_* del hallazgo a partir del triage del Módulo E; vacías si no hubo."""
+    if evaluation is None:
+        return {}
+    return {
+        "ai_is_false_positive": evaluation.is_false_positive,
+        "ai_adjusted_severity": evaluation.adjusted_severity,
+        "ai_explanation": _clean(evaluation.explanation),
+        "ai_remediation": _clean(evaluation.remediation),
+    }
 
 
 def _clean(value):
