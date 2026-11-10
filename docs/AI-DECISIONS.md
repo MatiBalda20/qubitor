@@ -481,7 +481,7 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
   - Corrección de la cuenta de horas: las 750 h free de Render son por workspace y se comparten entre todos los web services. Con la ventana elegida, un servicio usa ~465 h/mes, pero dos usarían ~930 h. Quedó documentado en `wrangler.toml` que, si se suma el scan-worker, hay que achicar la ventana a ~12 h/día.
   - Corrección tras la primera corrida en GitHub: el job de backend terminó con exit code 2 y 45 errores de colección (`ModuleNotFoundError: No module named 'app'`). `pytest` a secas no agrega `backend/` al `sys.path` (en local andaba porque se corría con `python -m pytest`). Se cambió el paso a `python -m pytest -q`, sin tocar código del backend. Verificado en un contenedor `python:3.11` (Linux) con una copia limpia del repo: 463 pasan y 114 se saltean (Postgres, internet o bucket real).
 - **Responsable:** Matías Balda
-- **PR:** #(pendiente)
+- **PR:** #50
 
 ### [2026-11-09] Bloqueo de Cloudflare a los pedidos del backend a la API de Clerk (Módulo E)
 
@@ -495,7 +495,7 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
   - `python -m pytest -q` desde `backend/` (Python 3.12 en Windows, con `PYTHONUTF8=1`): 465 pasan y 115 se saltean. Pasan los 16 tests de `test_github_clerk.py`. Fallan los mismos 3 tests de symlinks de siempre (`test_pqc.py`, `test_sca_manifests.py`), que también fallan en `main` porque Windows pide un privilegio para crear enlaces.
   - Queda pendiente: `engines/sca/osv.py` y `engines/sca/cache.py` también llaman sin `User-Agent`. Hoy funcionan, así que no se tocaron.
 - **Responsable:** Matías Balda
-- **PR:** #(pendiente)
+- **PR:** #51
 
 ### [PLANTILLA — completar en próximas entradas]
 
