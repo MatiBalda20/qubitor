@@ -59,7 +59,14 @@ def _providers() -> tuple[str, ...]:
 def _request(url: str, secret_key: str) -> list | None:
     """Lista de tokens que devuelve Clerk, o None si el proveedor no existe."""
     request = urllib.request.Request(
-        url, headers={"Authorization": f"Bearer {secret_key}", "Accept": "application/json"}
+        url,
+        headers={
+            "Authorization": f"Bearer {secret_key}",
+            "Accept": "application/json",
+            # Cloudflare, delante de la API de Clerk, bloquea el User-Agent por
+            # defecto de urllib (`Python-urllib/3.x`) con 403 / error code 1010.
+            "User-Agent": "Qubitor",
+        },
     )
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
