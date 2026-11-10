@@ -497,6 +497,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Matías Balda
 - **PR:** #51
 
+### [2026-11-09] Carpeta de clones en Render
+
+- **Problema abordado:** El primer escaneo real en Render (repo de demo) falló con `FileNotFoundError` sobre `/tmp/scans/scan-…`. Render arranca el contenedor con `/tmp` vacío, así que la carpeta que crea el Dockerfile no existe y ningún escaneo podía clonar. RQ lo reintentó dos veces en vano.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), a partir del trabajo fallido que quedó en la cola de errores de Upstash.
+- **Código / Arquitectura generada:** `_new_workdir` en `app/worker/job.py` crea `REPOS_DIR` si no existe antes de crear la carpeta temporal del clon. Además, eso ahora ocurre dentro del `try`: antes, si fallaba, el escaneo nunca se marcaba como fallido y quedaba «en curso» hasta que la API lo daba por trabado a los 30 minutos. 2 tests nuevos.
+- **Validación y Corrección Humana:** Los dos tests fallan sin la corrección y pasan con ella. Se reprodujo la situación de Render con la imagen del worker, `/tmp` vacío (tmpfs) y 512 MB: el escaneo del repo de demo terminó completo (21 hallazgos, sin errores de motores), la carpeta se creó y el clon se borró al final.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** fix(worker): crear la carpeta de clones si no existe
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
