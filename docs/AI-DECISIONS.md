@@ -483,6 +483,20 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Matías Balda
 - **PR:** #(pendiente)
 
+### [2026-11-09] Bloqueo de Cloudflare a los pedidos del backend a la API de Clerk (Módulo E)
+
+- **Problema abordado:** En producción, la pantalla «Tus repositorios de GitHub» mostraba «Clerk rechazó la clave secreta del backend», pero la clave no era el problema. `clerk.py` llamaba a la Backend API de Clerk con `urllib` sin header `User-Agent`, así que el pedido salía como `Python-urllib/3.11`. La API de Clerk está detrás de Cloudflare, que bloquea ese User-Agent con `403` y `error code: 1010`. Como el código daba el mismo mensaje para 401 y 403, el bloqueo parecía un problema de clave.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5). Le pasé la causa ya confirmada con los límites: agregar el `User-Agent` con el mismo criterio que `client.py`, separar los mensajes de 401 y 403 sin cambiar el resto del comportamiento, cubrirlo con tests usando el fixture `clerk_falso`, no tocar `engines/sca/` y no hacer push.
+- **Código / Arquitectura generada:**
+  - `backend/app/integrations/github/clerk.py`: `_request` manda `"User-Agent": "Qubitor"`, igual que el cliente de GitHub. El 401 sigue diciendo «Clerk rechazó la clave secreta del backend»; el 403 ahora dice «Clerk bloqueó el pedido del backend (403)».
+  - `backend/tests/integrations/test_github_clerk.py`: un test que verifica el header (`Request.get_header` normaliza el nombre a `User-agent`) y otro que verifica que 401 y 403 den mensajes distintos y que ninguno incluya la clave.
+- **Validación y Corrección Humana:**
+  - Reproducción antes del cambio, con la misma clave y el mismo usuario: `curl -A "Python-urllib/3.11" ...` contra `oauth_access_tokens` devolvió `403` con `error code: 1010`; el mismo `curl` sin `-A` devolvió `200`. Eso descartó la clave y apuntó al User-Agent.
+  - `python -m pytest -q` desde `backend/` (Python 3.12 en Windows, con `PYTHONUTF8=1`): 465 pasan y 115 se saltean. Pasan los 16 tests de `test_github_clerk.py`. Fallan los mismos 3 tests de symlinks de siempre (`test_pqc.py`, `test_sca_manifests.py`), que también fallan en `main` porque Windows pide un privilegio para crear enlaces.
+  - Queda pendiente: `engines/sca/osv.py` y `engines/sca/cache.py` también llaman sin `User-Agent`. Hoy funcionan, así que no se tocaron.
+- **Responsable:** Matías Balda
+- **PR:** #(pendiente)
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
