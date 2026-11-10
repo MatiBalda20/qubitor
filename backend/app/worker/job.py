@@ -32,8 +32,9 @@ def run_scan(scan_id: str, repo_url: str) -> dict:
     """
     store = get_store()
     store.mark_running(scan_id)
-    workdir = tempfile.mkdtemp(prefix=f"scan-{scan_id}-", dir=os.getenv("REPOS_DIR"))
+    workdir = None
     try:
+        workdir = _new_workdir(scan_id)
         repo_path = os.path.join(workdir, "repo")
         # Repos privados (Módulo E): el token se pide a Clerk recién acá y no se guarda.
         report_stage("clone")
@@ -60,7 +61,20 @@ def run_scan(scan_id: str, repo_url: str) -> dict:
             store.mark_failed(scan_id, f"{type(error).__name__}: {error}")
         raise
     finally:
-        remove_tree(workdir)
+        if workdir is not None:
+            remove_tree(workdir)
+
+
+def _new_workdir(scan_id: str) -> str:
+    """Carpeta temporal del clon dentro de REPOS_DIR, que se crea si no existe.
+
+    Render arranca el contenedor con /tmp vacío: la carpeta que crea el
+    Dockerfile no está, y sin esto ningún escaneo podía clonar.
+    """
+    repos_dir = os.getenv("REPOS_DIR")
+    if repos_dir:
+        os.makedirs(repos_dir, exist_ok=True)
+    return tempfile.mkdtemp(prefix=f"scan-{scan_id}-", dir=repos_dir)
 
 
 def _is_last_attempt() -> bool:
