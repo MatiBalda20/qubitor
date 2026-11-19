@@ -6,6 +6,7 @@ import {
   KeyRound,
   LayoutDashboard,
   Package,
+  Users,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -40,6 +41,7 @@ export const NAVIGATION: NavGroup[] = [
     items: [
       { to: '/history', label: 'Historial', icon: History },
       { to: '/connect', label: 'Conectar repositorio', icon: FolderGit2 },
+      { to: '/organization', label: 'Organización', icon: Users },
     ],
   },
 ]
