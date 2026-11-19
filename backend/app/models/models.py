@@ -21,6 +21,11 @@ class FindingStatus(str, enum.Enum):
     RESOLVED = "resolved"
     FALSE_POSITIVE = "false_positive"
 
+class MemberRole(str, enum.Enum):
+    """Rol del usuario en la organización, tal como lo informa Clerk (org:admin / org:member)."""
+    ADMIN = "admin"
+    MEMBER = "member"
+
 class Organization(Base):
     __tablename__ = "organizations"
     
@@ -40,6 +45,29 @@ class User(Base):
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     
     organization = relationship("Organization", back_populates="users")
+
+
+class Membership(Base):
+    """Pertenencia de un usuario a una organización, con su rol.
+
+    `users.organization_id` es la organización activa en la sesión; acá quedan
+    todas las organizaciones en las que el usuario trabajó, cada una con su rol.
+    """
+    __tablename__ = "memberships"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    role = Column(Enum(MemberRole, values_callable=lambda e: [x.value for x in e]), nullable=False, default=MemberRole.MEMBER, server_default='member')
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc))
+    last_seen_at = Column(DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "organization_id", name="uq_membership_user_org"),
+        Index("ix_memberships_organization_id", "organization_id"),
+    )
 
 
 class Repository(Base):
