@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.auth import CurrentUser, get_current_user
+from app.api.auth import CurrentUser, get_current_user, require_admin
 from app.api.schemas import (
     FindingOut,
     FindingUpdate,
@@ -59,7 +59,7 @@ def list_repositories(user: CurrentUser = Depends(get_current_user), db: Session
 def connect_repository(
     body: RepositoryIn,
     response: Response,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Conecta un repo público de GitHub. Si ya estaba conectado, lo devuelve."""

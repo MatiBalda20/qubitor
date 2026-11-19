@@ -66,9 +66,9 @@ def client(db, monkeypatch, encolados):
     app.dependency_overrides.clear()
 
 
-def headers(sub="user_1", org="org_1"):
+def headers(sub="user_1", org="org_1", role="org:admin"):
     ahora = int(time.time())
-    claims = {"iss": ISSUER, "sub": sub, "iat": ahora, "exp": ahora + 60, "org_id": org}
+    claims = {"iss": ISSUER, "sub": sub, "iat": ahora, "exp": ahora + 60, "org_id": org, "org_role": role}
     return {"Authorization": f"Bearer {jwt.encode(claims, CLAVE, algorithm='RS256')}"}
 
 
