@@ -515,6 +515,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** feat: organizaciones con varios miembros y roles
 
+### [2026-11-20] Fallas del Módulo C en el repo de demo y test de punta a punta
+
+- **Problema abordado:** El repo de demo tenía solo las fallas del Módulo D, así que en la demo y la defensa SAST, secretos y criptografía clásica no mostraban nada. Faltaba además confirmar que el RSA de menos de 2048 bits no se reporte dos veces (clásica y post-cuántica).
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** En `qubitor-demo-vulnerable`: `app/db.py` (SQL con f-string), `app/utils.py` (`eval`), `app/auth.py` (MD5 para contraseñas), `app/crypto_utils.py` (RSA de 1024 bits y AES-ECB), `config/settings.py` y `.env.example` (AWS key y token de GitHub inventados y visiblemente falsos). En `qubitor`: `test_repo_demo.py` suma el inventario del AES-ECB y un test de que el RSA de 1024 bits sale solo como `crypto.classic.rsa-weak-key`.
+- **Validación y Corrección Humana:** Antes de plantar, revisé qué detecta cada motor del Módulo C (`classic.py`, el regex del motor de secretos y Bandit) para que cada falla tenga una forma que efectivamente se reconozca. Corrí los cuatro motores sobre el repo de demo en local y cada falla aparece donde corresponde: B608 en `app/db.py:8`, B307 en `app/utils.py:7`, `secrets.aws` y `secrets.github` como critical, `crypto.classic.weak-hash`, `rsa-weak-key` y `aes-ecb`. Confirmé que la duplicación de RSA < 2048 que había quedado pendiente en la entrada de `pqc.py` ya la resuelve `CryptoEngine`: el RSA de 1024 bits sale una sola vez, como `crypto.classic.rsa-weak-key` (high). El único hallazgo post-cuántico nuevo es el inventario del AES-ECB, sin tamaño de clave. Los tests del demo pasan contra la copia local y fallan contra el repo publicado hasta subir las fallas, como se esperaba. Las credenciales tienen el formato que pide el motor pero dicen FAKE y Demo en el valor. Decidí no plantar todavía el secreto en el historial de Git ni el Dockerfile y el nginx.conf, porque ningún motor los analiza: quedan para cuando el Módulo C sume esos motores. Las fallas las planté yo en lugar del Módulo C, con aviso al equipo, para llegar a la defensa con los cuatro motores mostrando resultados.
+- **Responsable:** Valentina Pértile de la Vega
+- **PR:** test(pqc): actualizar el test del repo de demo con las fallas del Módulo C
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
