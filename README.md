@@ -1,78 +1,157 @@
 # Qubitor
 
-Plataforma SaaS de **auditoría continua de seguridad** con evaluación de hallazgos asistida por IA. Conectá un repositorio de GitHub/GitLab y Qubitor ejecuta SAST, SCA, detección de secretos y auditoría de criptografía vulnerable, prioriza los resultados con IA y devuelve un reporte accionable con hoja de ruta de remediación.
+Plataforma de **auditoría continua de seguridad**. Conectás un repositorio de GitHub y Qubitor lo analiza con cuatro motores (código inseguro, dependencias vulnerables, secretos expuestos y criptografía vulnerable, también frente a computadoras cuánticas), prioriza los hallazgos con IA y devuelve un reporte con una hoja de ruta de remediación.
 
-> Trabajo Práctico Integrador — *Desarrollo de Software Cloud*, UTN Facultad Regional La Plata (2026)
+**App publicada:** https://qubitor.scanner-app.workers.dev
+
+> Trabajo Práctico Integrador — *Desarrollo de Software Cloud*, UTN Facultad Regional La Plata, 2026.
 
 ## Equipo
 
-| Integrante | Legajo |
-|---|---|
-| Balda, Matías | 33460 |
-| Pértile de la Vega, Valentina | 33288 |
-| Wilt, Juan Ignacio | 33151 |
-| Marini, Alvaro | 33133 |
-| Chiappini, Valentino | 33072 |
+| Integrante | Legajo | Módulo |
+|---|---|---|
+| Wilt, Juan Ignacio | 33151 | A — API, base de datos, orquestador, cola de escaneos e historial |
+| Balda, Matías | 33460 | B — Base del frontend, dashboard, deploy y CI |
+| Marini, Alvaro | 33133 | C — Criptografía clásica, secretos, SAST y contenedor de escaneo |
+| Pértile de la Vega, Valentina | 33288 | D — Criptografía post-cuántica, dependencias (SCA), reportes y caché |
+| Chiappini, Valentino | 33072 | E — Integración con GitHub, triage con IA y webhook |
+
+## Cómo funciona un escaneo
+
+```
+POST /repositories/{id}/scans  →  cola (Redis)  →  scan-worker
+   │
+   ▼
+[1] Clonado      git clone --depth 1 en un directorio temporal (límite 50 MB)
+[2] Motores      SAST │ SCA │ Secretos │ Criptografía, en paralelo
+[3] Normalizar   severidad unificada y deduplicación por fingerprint
+[4] Triage IA    Gemini: ¿falso positivo?, severidad real y remediación
+[5] Risk Score   puntaje 0–100 y nota A–F
+[6] Guardar      hallazgos en Postgres, reporte JSON/PDF y CBOM en el bucket
+   │
+   ▼
+Se borra el clon: Qubitor no conserva el código de los usuarios.
+```
+
+El frontend consulta el progreso por etapa mientras el escaneo corre. Si un motor falla, los demás siguen y el escaneo queda parcial.
 
 ## Arquitectura
 
-Tres capas desacopladas sobre servicios administrados, sin servidores propios que mantener:
-
 ```
-┌────────────────────┐   HTTPS/JSON   ┌────────────────────┐   SQL   ┌───────────────────────┐
-│  Cloudflare Pages   │ ─────────────► │    Render (API)     │ ──────► │  Supabase (Postgres)  │
-│  Frontend (React)   │ ◄───────────── │   FastAPI backend    │         │  + Row Level Security │
-└────────────────────┘                 └──────────┬──────────┘         └───────────────────────┘
-                                                    │
-                          ┌─────────────────────────┼─────────────────────────┐
-                          ▼                         ▼                         ▼
-                    Gemini API           GitHub / GitLab API           Clerk / Auth0
-              (evaluación de hallazgos)     (repos del usuario)        (autenticación)
+                         ┌──────────────────────────┐
+  Navegador ───────────► │ Cloudflare Workers       │  frontend React (archivos estáticos)
+                         └────────────┬─────────────┘
+                                      │ HTTPS + JWT de Clerk
+                                      ▼
+  GitHub ── push ──► Worker de   ┌──────────────────┐        ┌────────────────────────┐
+                     webhooks ──►│ Render: API      │ ─────► │ Supabase: Postgres     │
+                     (HMAC)      │ FastAPI          │        │ con Row Level Security │
+                                 └────────┬─────────┘        └────────────────────────┘
+                                          │ encola                        ▲
+                                          ▼                               │
+                                 ┌──────────────────┐                     │
+                                 │ Upstash Redis    │                     │
+                                 │ (cola, RQ)       │                     │
+                                 └────────┬─────────┘                     │
+                                          ▼                               │
+                                 ┌──────────────────┐  guarda hallazgos   │
+                                 │ Render: worker   │ ────────────────────┘
+                                 │ (Docker aislado) │
+                                 └──┬────┬─────┬────┘
+                                    │    │     │
+                     Gemini API ◄───┘    │     └───► Bucket S3-compatible: reportes y CBOM
+                     (triage)            ▼            (URLs firmadas de 10 min)
+                                 Cloudflare KV: caché de OSV (24 h)
 
-Cloudflare Worker (Cron 10 min) ── GET /health ──► Render   (keep-alive)
-Better Stack                    ── logs / uptime ► Render   (observabilidad)
+  Worker keep-alive (cron 10 min) ── GET /health ──► API ◄── GET /health ── Better Stack (uptime)
 ```
 
-Ver el detalle completo (justificación de cada componente, flujo end-to-end, modelo de datos, diseño de API, seguridad, costos y riesgos) en el documento de arquitectura del Checkpoint 1.
+### Componentes cloud
 
-## Stack
+Cada módulo tiene un componente cloud propio. La materia presenta los servicios de AWS; el proyecto usa sus equivalentes con capa gratuita.
 
-| Capa | Tecnología | Por qué |
+| Módulo | Componente | Servicio | Equivalente en AWS |
+|---|---|---|---|
+| A | Cola de escaneos y separación API / worker | Upstash Redis + RQ, dos servicios en Render | SQS + ECS |
+| B | Deploy, CI y observabilidad | Render, Cloudflare Workers, GitHub Actions, Better Stack | CloudFormation + CloudWatch |
+| C | Contenedor de escaneo aislado | Docker en Render (usuario sin privilegios) | ECS / Fargate |
+| D | Reportes en bucket y caché NoSQL | Bucket S3-compatible (Supabase Storage o Cloudflare R2) y Cloudflare KV | S3 + DynamoDB |
+| E | Webhook serverless e IA gestionada | Cloudflare Worker y Gemini API | Lambda + API Gateway y Bedrock |
+
+## Motores de análisis
+
+Todos implementan el mismo contrato (`backend/app/engines/base.py`): reciben la ruta del repo y devuelven una lista de `Finding`.
+
+| Motor | Qué detecta | Cómo |
 |---|---|---|
-| Frontend | React + [Cloudflare Pages](https://pages.cloudflare.com/) | Hosting estático + CDN global, deploy continuo desde Git, capa gratuita generosa |
-| Backend / API | FastAPI en [Render](https://render.com/) | Deploy continuo desde GitHub, variables de entorno nativas, `render.yaml` reproducible |
-| Base de datos | [Supabase](https://supabase.com/) (Postgres) | Postgres administrado, Row Level Security por organización, backups automáticos |
-| IA | [Gemini API](https://ai.google.dev/) | Clasifica hallazgos, descarta falsos positivos, redacta remediación en lenguaje natural |
-| Autenticación | Clerk / Auth0 | Identity provider gestionado, OAuth con GitHub/GitLab, JWT |
-| Observabilidad | Better Stack + Cloudflare Worker (keep-alive) | Logs centralizados, uptime, evita cold start del plan free de Render |
+| **SAST** | Código inseguro: inyección, `eval`, deserialización, etc. | Bandit (Python) y Semgrep con reglas propias (JavaScript/TypeScript) |
+| **Secretos** | Claves y tokens expuestos (AWS, GitHub, Google, Slack, claves privadas) | Patrones conocidos y entropía de Shannon; el valor siempre se enmascara |
+| **Criptografía clásica** | MD5/SHA-1, DES/RC4, RSA < 2048, AES-ECB, TLS sin validar, random inseguro | `ast` en Python y expresiones regulares en JavaScript |
+| **Criptografía post-cuántica** | RSA, ECDSA, ECDH, DH, EdDSA (Shor) y AES-128 (Grover); certificados, claves y keystores | `ast`, regex y la librería `cryptography`; arma el inventario criptográfico (CBOM) |
+| **SCA** | Dependencias con vulnerabilidades conocidas (CVE, CVSS, versión corregida) | `requirements.txt`, `package.json` y `package-lock.json` contra la API de OSV |
+
+Severidades: `critical`, `high`, `medium`, `low` e `info` (inventario sin riesgo). El Risk Score parte de 100 y resta un peso por hallazgo abierto: 10, 5, 2, 0,5 y 0.
+
+## Funcionalidades
+
+- Login con GitHub (Clerk) y conexión de repos públicos; los privados se habilitan con `GITHUB_PRIVATE_REPOS=true`.
+- Escaneo manual o automático en cada push (webhook).
+- Dashboard con Risk Score, hallazgos por motor y severidad, y resumen ejecutivo generado con IA.
+- Panel de remediación por hallazgo: explicación, pasos y posible falso positivo.
+- Vistas por motor: código inseguro, secretos, dependencias (con el comando para actualizar) y preparación post-cuántica (CBOM, exposición a Shor, hoja de ruta a ML-KEM / ML-DSA y urgencia según la desigualdad de Mosca).
+- Historial de escaneos con la evolución del Risk Score y los hallazgos nuevos y resueltos.
+- Descarga del reporte en PDF y del CBOM en CycloneDX 1.6.
 
 ## Estructura del repositorio
 
 ```
 qubitor/
-├── backend/          # API FastAPI (motores de escaneo, orquestación, integraciones)
-├── frontend/          # SPA React (dashboard, conexión de repos, reporte de hallazgos)
-├── AI-DECISIONS.md    # Log de auditoría de decisiones asistidas por IA (obligatorio)
-├── CONTRIBUTING.md    # Flujo de ramas, commits, PRs, Kanban
-└── README.md
+├── backend/
+│   ├── app/
+│   │   ├── api/            # endpoints REST y autenticación con Clerk
+│   │   ├── models/         # modelos SQLAlchemy (migraciones en backend/alembic)
+│   │   ├── orchestrator/   # motores en paralelo, normalización y Risk Score
+│   │   ├── worker/         # cola, scan-worker, clonado y guardado
+│   │   ├── engines/        # base.py (contrato) y los motores sast, sca, secrets y crypto
+│   │   ├── ai/             # triage y resumen ejecutivo con Gemini
+│   │   ├── integrations/   # GitHub
+│   │   └── storage/        # reportes, PDF y CBOM en el bucket
+│   ├── worker/Dockerfile   # imagen del scan-worker
+│   └── tests/
+├── frontend/src/
+│   ├── components/  lib/  types/   # base compartida
+│   └── features/                    # una carpeta por vista
+├── infra/
+│   ├── webhook-worker/     # Cloudflare Worker que recibe los webhooks de GitHub
+│   └── worker-keepalive/   # Cloudflare Worker que mantiene despierta la API
+├── docs/                   # arquitectura, contribución, equipo y AI-DECISIONS
+└── .github/workflows/ci.yml
 ```
 
-## Setup local
+## Correr en local
 
-### Requisitos
+Requisitos: Python 3.11+, Node 20+, y Docker si querés levantar Postgres y Redis en local.
 
-- Python 3.11+
-- Node 20+
-- Cuenta de Supabase, Gemini API y Clerk/Auth0 (variables de entorno)
-
-### Backend
+### Backend (API)
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # completar DATABASE_URL, GEMINI_API_KEY, claves de auth
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+cp .env.example .env        # completar; cada variable está explicada ahí
+alembic upgrade head        # crea las tablas en la base de DATABASE_URL
 uvicorn app.main:app --reload
+```
+
+La API queda en `http://localhost:8000` (`/health` para comprobarlo).
+
+### Scan-worker
+
+Toma los escaneos de la cola. Necesita la misma `REDIS_URL` que la API:
+
+```bash
+cd backend && source .venv/bin/activate
+python -m app.worker.run
 ```
 
 ### Frontend
@@ -80,44 +159,60 @@ uvicorn app.main:app --reload
 ```bash
 cd frontend
 npm install
-cp .env.example .env   # completar VITE_API_URL, claves públicas de auth
+cp .env.example .env        # sin VITE_API_URL usa datos de ejemplo; sin la clave de Clerk, entra sin login
 npm run dev
 ```
 
-La API queda disponible en `http://localhost:8000` y el frontend en `http://localhost:5173` (o el puerto que indique Vite).
+El frontend queda en `http://localhost:5173`.
 
-## Flujo de escaneo
+### Tests
 
-1. **Conexión** — el usuario se autentica y autoriza a Qubitor vía OAuth de GitHub/GitLab.
-2. **Disparo** — manual desde el frontend o automático por webhook en cada push.
-3. **Ejecución** — el backend corre en paralelo los cuatro motores: SAST, SCA (contra OSV/NVD), secret scanning y auditoría de criptografía vulnerable.
-4. **Agregación** — cada motor persiste sus hallazgos crudos con severidad y categoría.
-5. **Evaluación con IA** — Gemini descarta falsos positivos, re-prioriza por severidad real y redacta sugerencias de remediación.
-6. **Reporte** — el frontend renderiza el dashboard con el reporte priorizado.
+```bash
+cd backend && pytest -q           # backend
+cd frontend && npm test           # frontend
+```
 
-## Entornos
+Algunos tests usan servicios reales y se activan solo si se piden:
 
-| Entorno | Rama | Destino |
+| Variable | Qué habilita |
+|---|---|
+| `QUBITOR_TEST_DATABASE_URL` | Tests de la API y del guardado contra un Postgres (por ejemplo, uno en Docker) |
+| `QUBITOR_TESTS_RED=1` | Tests con internet: OSV real, esquema de CycloneDX y el repo de demo |
+| `QUBITOR_TESTS_BUCKET=1` | Test contra el bucket real configurado en `backend/.env` |
+
+## Deploy
+
+| Pieza | Dónde | Cómo |
 |---|---|---|
-| Desarrollo local | `feature/*` | Backend y frontend corridos localmente |
-| Staging (opcional) | `develop` | Deploy de prueba en Render / Cloudflare Pages |
-| Producción | `main` | Deploy automático tras cada PR aprobado |
+| Frontend | Cloudflare Workers (archivos estáticos) | Build desde `frontend/` con `npm run build` y `wrangler deploy --assets=./dist`. `VITE_API_URL` y `VITE_CLERK_PUBLISHABLE_KEY` son variables de build: si cambian, hay que volver a construir. |
+| API | Render | `uvicorn app.main:app`. `CORS_ORIGINS` tiene que incluir la URL del frontend. |
+| Scan-worker | Render, con `backend/worker/Dockerfile` | `python -m app.worker.run` |
+| Base de datos | Supabase | Usar el **session pooler** (Render no sale por IPv6, que es lo único que acepta la conexión directa) con el formato `postgresql+psycopg://…?sslmode=require`. Las tablas se crean con `alembic upgrade head`. |
+| Webhook y keep-alive | Cloudflare Workers | Ver `infra/webhook-worker` e `infra/worker-keepalive` |
 
-## CI/CD
+Las variables de cada servicio están documentadas en `backend/.env.example` y `frontend/.env.example`. Ningún secreto va en el repo.
 
-GitHub Actions corre en cada Pull Request: lint + type-check del frontend, lint + tests (`pytest`) del backend, y build de verificación. El deploy real lo gestionan Render y Cloudflare Pages automáticamente al detectar push a `main`.
+## CI
 
-## Contribuir
+GitHub Actions (`.github/workflows/ci.yml`) corre en cada pull request y en cada push a `main`: lint y build del frontend, y `pytest` del backend.
 
-Ver [`CONTRIBUTING.md`](./CONTRIBUTING.md) para el flujo de ramas, convención de commits, proceso de PR y gestión del Kanban.
+## Repo de demo
 
-Todo código o diseño generado con asistencia de IA debe quedar registrado en [`AI-DECISIONS.md`](./AI-DECISIONS.md) antes de mergear.
+[`qubitor-demo-vulnerable`](https://github.com/ValentinaPertile/qubitor-demo-vulnerable) tiene vulnerabilidades plantadas a propósito (dependencias con CVE, criptografía débil y vulnerable a Shor, un certificado RSA-1024 con SHA-1, secretos falsos y código inseguro). Es el repo que se escanea en la demo y en los tests de integración. Las credenciales que contiene son inventadas.
 
-## Cronograma del TPI
+## Documentación
+
+- [Arquitectura](docs/ARCHITECTURE.md)
+- [Cómo contribuir](docs/CONTRIBUTING.md): ramas, Conventional Commits y revisión cruzada de PRs
+- [Equipo](docs/TEAM_CHART.md)
+- [AI-DECISIONS](docs/AI-DECISIONS.md): registro de todo el código generado con IA y de su revisión humana
+- [Producto](PRODUCT.md) y [diseño](DESIGN.md)
+
+## Cronograma
 
 | Hito | Fecha | Entregable |
 |---|---|---|
-| Clase 1 | 24/08/2026 | One-Pager |
-| Checkpoint 1 | 28/09/2026 | Definición de arquitectura, diagrama cloud, repo inicial con actividad |
-| Checkpoint 2 | 09/11/2026 | Demo funcional (infraestructura desplegada, backend operativo) |
-| Defensa Final | 30/11/2026 | Presentación en vivo del MVP en producción |
+| One-Pager | 24/08/2026 | Problema, solución y modelo de negocio |
+| Checkpoint 1 | 28/09/2026 | Arquitectura, diagrama cloud y repo inicial |
+| Checkpoint 2 | 09/11/2026 | Demo funcional desplegada |
+| Defensa final | 30/11/2026 | Presentación en vivo |
