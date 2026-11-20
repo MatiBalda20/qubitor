@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.auth import CurrentUser, get_current_user
+from app.api.auth import CurrentUser, get_current_user, require_admin
 from app.api.schemas import RepositoryOut, repository_out
 from app.integrations.github.clerk import get_github_token
 from app.integrations.github.client import GitHubClient, GitHubRepo, is_valid_full_name
@@ -85,7 +85,7 @@ def list_github_repositories(
 def connect_github_repository(
     body: ConnectGitHubRepoIn,
     response: Response,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_admin),
     github: GitHubClient = Depends(get_github_client),
     db: Session = Depends(get_db),
 ):

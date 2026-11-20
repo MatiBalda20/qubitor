@@ -506,6 +506,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Juan Ignacio Wilt
 - **PR:** fix(worker): crear la carpeta de clones si no existe
 
+### [2026-11-19] Organizaciones con varios miembros y roles
+
+- **Problema abordado:** La versión final del plan pide organizaciones con varios miembros y roles. La API ya separaba los datos por organización, pero cada usuario tenía una sola organización y no había roles: cualquiera podía hacer todo.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5).
+- **Código / Arquitectura generada:** Tabla `memberships` (usuario, organización, rol y última actividad) con su migración de Alembic, que carga las membresías de los usuarios existentes. `auth.py` lee el rol del token de Clerk en cada pedido (`org_role` del formato v1 u `o.rol` del v2): `org:admin` es admin y cualquier otro rol es member; sin organización activa, el usuario es admin de la suya personal. `require_admin` protege conectar repositorios (URL pública y GitHub); los member pueden ver, escanear y marcar hallazgos. `GET /me` (rol, organización y permisos) y `GET /organization/members` (miembros con rol y última actividad; nombre y foto pedidos a la API de Clerk en el momento). Pantalla «Organización» en el frontend con el rol, los permisos, los miembros y el `OrganizationSwitcher` de Clerk para crear organizaciones, invitar miembros y cambiar roles.
+- **Validación y Corrección Humana:** Clerk queda como fuente de verdad de los roles: la API no tiene endpoints para cambiarlos, así que no hay dos lugares que se puedan contradecir, y un cambio de rol en Clerk se aplica en el próximo pedido. Un token con organización pero sin rol se toma como member, no como admin. La base no guarda nombres ni emails: se piden a Clerk solo para la lista de miembros, y si Clerk no responde la lista sale igual. 25 tests nuevos de backend contra Postgres 16 (roles de v1 y v2, 403 para member en los dos endpoints de conexión sin pedir el token de GitHub, cambio de rol, cambio de organización conservando las membresías y aislamiento entre organizaciones); se comprobó que fallan si se quita `require_admin`. La migración se probó subiendo con datos existentes y bajando. 3 tests nuevos del frontend y revisión en el navegador a 1440 y 375 px. Los tests existentes ahora usan tokens con rol admin, que es lo que suponían. Pendiente fuera del código: activar Organizations en el panel de Clerk para que aparezca el selector.
+- **Responsable:** Juan Ignacio Wilt
+- **PR:** feat: organizaciones con varios miembros y roles
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
