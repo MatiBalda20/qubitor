@@ -72,3 +72,28 @@ def test_enmascara_entero_un_secreto_con_llaves_o_corchetes(tmp_path, separador)
     hallazgos = SecretsEngine().scan(str(tmp_path))
     assert len(hallazgos) == 1
     assert "SECRETORESTANTE" not in hallazgos[0].snippet
+
+def test_detecta_secreto_borrado_en_historial_de_git(tmp_path):
+    import subprocess
+
+    def git(*args):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True)
+
+    git("init")
+    git("config", "user.email", "test@qubitor.invalid")
+    git("config", "user.name", "Test")
+
+    archivo = tmp_path / "config.py"
+    archivo.write_text('AWS_KEY = "AKIAIOSFODNN7EXAMPLE"\n')
+    git("add", "config.py")
+    git("commit", "-m", "agregar secreto")
+
+    # Borramos el secreto en un segundo commit
+    archivo.write_text('AWS_KEY = ""\n')
+    git("add", "config.py")
+    git("commit", "-m", "borrar secreto")
+
+    hallazgos = SecretsEngine().scan(str(tmp_path))
+    reglas = [h.rule_id for h in hallazgos]
+    assert "secrets.aws.history" in reglas
+    assert "AKIAIOSFODNN7EXAMPLE" not in hallazgos[0].snippet

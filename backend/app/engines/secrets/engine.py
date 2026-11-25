@@ -1,5 +1,6 @@
 import math
 import re
+import subprocess
 from pathlib import Path
 
 from app.engines.base import Engine, Finding, Severity
@@ -48,6 +49,7 @@ class SecretsEngine(Engine):
             relative_path = file_path.relative_to(repo).as_posix()
             findings.extend(self._scan_content(content, relative_path))
 
+        findings.extend(self._scan_git_history(repo))
         return findings
 
     def _should_ignore(self, path: Path, repo_root: Path) -> bool:
@@ -101,4 +103,63 @@ class SecretsEngine(Engine):
                         metadata={"secret_type": rule_id.split(".")[-1]}
                     ))
 
+        return findings
+
+    def _scan_git_history(self, repo: Path, max_commits: int = 20) -> list[Finding]:
+        """Recorre los últimos commits para detectar secretos borrados pero aún en la historia."""
+        if not (repo / ".git").exists():
+            return []
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(repo), "log", f"-n{max_commits}", "-p", "--no-color", "--pretty=format:COMMIT:%H"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+
+        if proc.returncode != 0 or not proc.stdout:
+            return []
+
+        findings: list[Finding] = []
+        seen: set[tuple[str, str, str]] = set()
+        current_commit = ""
+        current_file = "git-history"
+
+        for raw_line in proc.stdout.splitlines():
+            if raw_line.startswith("COMMIT:"):
+                current_commit = raw_line.removeprefix("COMMIT:").strip()[:12]
+                continue
+            if raw_line.startswith("+++ b/"):
+                current_file = raw_line.removeprefix("+++ b/").strip()
+                continue
+            # Solo líneas agregadas en commits anteriores (ignorando encabezados +++).
+            if not raw_line.startswith("+") or raw_line.startswith("+++"):
+                continue
+
+            line = raw_line[1:]
+            for f in self._scan_content(line, current_file):
+                # Si el archivo ya no tiene ese secreto en HEAD o fue borrado, lo marcamos como historial.
+                key = (f.rule_id, current_file, f.snippet)
+                if key in seen:
+                    continue
+                seen.add(key)
+                findings.append(Finding(
+                    engine=self.name,
+                    rule_id=f"{f.rule_id}.history",
+                    title=f"{f.title} (en historial de Git)",
+                    severity=Severity.CRITICAL,
+                    file_path=current_file,
+                    line=None,
+                    snippet=f.snippet,
+                    description=(
+                        f"Secreto detectado en el commit {current_commit}. Aunque haya sido borrado "
+                        "en un commit posterior, sigue expuesto en el historial de Git. Rotá la credencial inmediatamente."
+                    ),
+                    cwe="CWE-798",
+                    metadata={**f.metadata, "in_git_history": True, "commit": current_commit},
+                ))
         return findings

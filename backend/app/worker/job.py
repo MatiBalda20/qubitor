@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from app.engines.config import ConfigEngine
 
 from rq import get_current_job
 
@@ -20,7 +21,7 @@ from app.worker.store import get_store
 
 
 def default_engines() -> list[Engine]:
-    return [SastEngine(), ScaEngine(), SecretsEngine(), CryptoEngine()]
+    return [SastEngine(), ScaEngine(), SecretsEngine(), CryptoEngine(), ConfigEngine()]
 
 
 def run_scan(scan_id: str, repo_url: str) -> dict:
