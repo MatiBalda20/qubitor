@@ -2,8 +2,14 @@
 # Spec: https://render.com/docs/blueprint-spec
 #
 # Un proyecto con dos entornos separados:
-#   - staging:    despliega desde la rama `develop`, en cada commit.
-#   - production: despliega desde `main`, solo cuando la CI de GitHub pasa en verde.
+#   - staging:    despliega desde la rama `develop`.
+#   - production: despliega desde la rama `main`.
+#
+# Render está conectado al fork MatiBalda20/qubitor, no al repo del equipo. Un workflow
+# del fork (rama `sync`) copia `main` y `develop` del repo del equipo solo cuando la CI
+# pasó en verde para ese commit. Por eso los dos entornos despliegan en cada commit
+# (`autoDeployTrigger: commit`): al fork nunca llega un commit con la CI en rojo.
+# Ver docs/deploy.md.
 #
 # Cada entorno tiene su API, su scan-worker y su grupo de variables. La base (Supabase),
 # la cola (Upstash Redis) y el bucket de reportes son externos y van por entorno:
@@ -153,8 +159,9 @@ projects:
             buildCommand: pip install -r requirements.txt
             startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
             healthCheckPath: /health
-            # Solo despliega si la CI de GitHub (.github/workflows/ci.yml) pasa en verde.
-            autoDeployTrigger: checksPass
+            # `commit` y no `checksPass`: la CI ya se verificó en el repo del equipo antes de
+            # que el sync copie el commit al fork (los pushes del sync no corren la CI del fork).
+            autoDeployTrigger: commit
             envVars:
               - fromGroup: qubitor-production-config
               - key: DATABASE_URL
@@ -191,7 +198,7 @@ projects:
             dockerfilePath: ./worker/Dockerfile
             dockerContext: .
             healthCheckPath: /health
-            autoDeployTrigger: checksPass
+            autoDeployTrigger: commit
             envVars:
               - fromGroup: qubitor-production-config
               - key: DATABASE_URL
