@@ -10,26 +10,22 @@ workers_dev = false
 enabled = true
 
 [triggers]
-# Cada 10 minutos entre las 11:00 y las 01:59 UTC, es decir de 8:00 a 22:59 en
+# Cada 10 minutos entre las 12:00 y las 23:59 UTC, es decir de 9:00 a 20:59 en
 # Argentina (UTC-3, sin horario de verano). Render free apaga el servicio tras
 # 15 minutos sin tráfico, así que un ping cada 10 lo mantiene despierto en ese
-# horario y de noche se deja dormir.
+# horario y de noche se deja dormir (se apaga ~00:05 UTC, 15 min tras el último).
 #
 # Por qué no 24/7: el plan free de Render da 750 horas de instancia por mes por
-# workspace, compartidas entre TODOS los web services free. Con esta ventana cada
-# servicio consume ~15 h/día ≈ 465 h/mes (31 días). Un solo servicio 24/7 usaría
-# 744 h y no dejaría margen para nada más.
-# OJO: si se suma un segundo servicio de Render a la lista (el scan-worker),
-# 2 × 465 = 930 h > 750 h. En ese caso hay que achicar la ventana a ~12 h/día
-# (2 × 12 × 31 = 744 h), por ejemplo "*/10 0,12-23 * * *" (9:00 a 21:59 ART).
-crons = ["*/10 0-1,11-23 * * *"]
+# workspace, compartidas entre TODOS los web services free. Hay dos servicios
+# (API y scan-worker): 2 servicios × 12 h × 31 días = 744 h < 750 h.
+# OJO: "0,12-23" serían 13 h de pings (2 × 13 × 31 = 806 h), así que no alcanza.
+# Si se suma otro servicio, hay que volver a hacer la cuenta.
+crons = ["*/10 12-23 * * *"]
 
 [vars]
 # URLs base separadas por coma, sin "/health" (el worker lo agrega).
-# Para sumar el scan-worker cuando esté desplegado, agregalo a la lista:
-#   TARGETS = "https://qubitor-api.onrender.com,https://<URL-DEL-SCAN-WORKER>"
-# (y revisá la cuenta de horas de arriba).
-TARGETS = "https://qubitor-api.onrender.com"
+# La API y el scan-worker (que expone /health si Render le pasa PORT).
+TARGETS = "https://qubitor-api.onrender.com,https://<URL-DEL-SCAN-WORKER>.onrender.com"
 # Cuánto esperar cada respuesta. Un cold start de Render puede tardar ~50 s;
 # aunque se corte antes, el pedido ya despertó al servicio.
 TIMEOUT_MS = "30000"
