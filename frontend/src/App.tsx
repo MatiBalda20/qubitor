@@ -2,7 +2,6 @@ import { Compass } from 'lucide-react'
 import { Link, Route, Routes } from 'react-router-dom'
 import { EmptyState } from '@/components/EmptyState'
 import { AppLayout } from '@/components/layout/AppLayout'
-import { ModulePlaceholder } from '@/components/layout/ModulePlaceholder'
 import SignInPage from '@/features/auth/SignInPage'
 import SsoCallbackPage from '@/features/auth/SsoCallbackPage'
 import ConnectPage from '@/features/connect/ConnectPage'
@@ -13,6 +12,7 @@ import OrganizationPage from '@/features/organization/OrganizationPage'
 import PqcPage from '@/features/pqc/PqcPage'
 import { RequireAuth } from '@/lib/auth'
 import SecretsPage from '@/features/secrets/SecretsPage'
+import CodePage from '@/features/code/CodePage'
 
 /**
  * Rutas de la app. Para sumar una vista, reemplazar su ModulePlaceholder por
@@ -32,10 +32,7 @@ export default function App() {
         }
       >
         <Route index element={<DashboardPage />} />
-        <Route
-          path="code"
-          element={<ModulePlaceholder title="Código inseguro" owner="Módulo C" folder="features/code" />}
-        />
+        <Route path="code" element={<CodePage />} />
         <Route path="secrets" element={<SecretsPage />} />
         <Route path="pqc" element={<PqcPage />} />
         <Route path="dependencies" element={<DependenciesPage />} />
