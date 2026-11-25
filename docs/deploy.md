@@ -4,12 +4,25 @@ La infraestructura de Render está definida como código en [`render.yaml`](../r
 
 | Entorno | Rama | Servicios en Render | Cuándo despliega |
 |---|---|---|---|
-| `staging` | `develop` | `qubitor-api-staging`, `qubitor-scan-worker-staging` | En cada commit a `develop`. |
-| `production` | `main` | `qubitor-api`, `qubitor-scan-worker` | En cada commit a `main`, **solo si la CI de GitHub pasa en verde** (`autoDeployTrigger: checksPass`). |
+| `staging` | `develop` | `qubitor-api-staging`, `qubitor-scan-worker-staging` | Cuando un commit de `develop` con la CI en verde llega al fork. |
+| `production` | `main` | `qubitor-api`, `qubitor-scan-worker` | Cuando un commit de `main` con la CI en verde llega al fork. |
 
 Flujo: `feature/*` → PR a `develop` → se prueba en staging → PR de `develop` a `main` → producción.
 
-Producción usa `checksPass` y no un deploy manual: el merge a `main` ya pasó por revisión cruzada, y esperar la CI evita publicar un commit con tests rotos sin depender de que alguien se acuerde de apretar "Deploy".
+## Render despliega desde un fork
+
+Render está conectado al fork [`MatiBalda20/qubitor`](https://github.com/MatiBalda20/qubitor), no a este repo. Para que un merge llegue solo a Render, el fork tiene un workflow de sincronización:
+
+```
+merge en ValentinaPertile/qubitor ──▶ CI en verde ──▶ sync (cada ~10 min) ──▶ fork ──▶ Render
+```
+
+- El workflow vive en la rama `sync` del fork, que es su rama por defecto (los workflows programados de GitHub solo corren desde ahí). `main` y `develop` del fork son copias exactas de las de este repo.
+- Cada corrida mira el último commit de `main` y de `develop` acá y lo copia al fork **solo si los jobs de CI `Frontend (lint + build)` y `Backend (pytest)` pasaron en verde** para ese commit. Si la CI está en rojo o todavía corre, no copia nada y lo reintenta en la corrida siguiente.
+- Solo avanza las ramas (fast-forward): nunca reescribe historia. **No se commitea nunca directo en `main` o `develop` del fork**; si pasa, el sync falla hasta que se corrija.
+- Por eso los servicios usan `autoDeployTrigger: commit` y no `checksPass`: la CI ya se verificó acá, y los pushes que hace el sync no corren la CI del fork.
+- Para no esperar al cron (GitHub puede atrasarlo varios minutos): fork → Actions → *Sync desde el repo del equipo* → *Run workflow*.
+- Si un commit modifica archivos de `.github/workflows/`, GitHub no deja que el token del workflow lo copie y la corrida falla. Esa vez se sincroniza a mano con el botón *Sync fork* de la rama en el fork.
 
 ## Qué está en Render y qué no
 
