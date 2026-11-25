@@ -31,11 +31,11 @@ class ScaEngine(Engine):
         unique_ids = sorted({vuln_id for ids in vuln_ids for vuln_id in ids})
         details = self.client.get_vulns(unique_ids)
 
-        findings: list[Finding] = []
-        for dependency, ids in zip(dependencies, vuln_ids, strict=True):
-            for vuln in _deduplicate([details[vuln_id] for vuln_id in ids]):
-                findings.append(vulnerability_to_finding(dependency, vuln))
-        return findings
+        return [
+            vulnerability_to_finding(dependency, vuln)
+            for dependency, ids in zip(dependencies, vuln_ids, strict=True)
+            for vuln in _deduplicate([details[vuln_id] for vuln_id in ids])
+        ]
 
 
 def _deduplicate(vulns: list[dict]) -> list[dict]:

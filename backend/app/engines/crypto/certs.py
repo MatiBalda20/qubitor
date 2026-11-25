@@ -1,7 +1,8 @@
 """Certificados y claves versionados en el repo (Módulo D).
 
-Lee los archivos `.pem`, `.crt`, `.cer`, `.der` y `.key` con la librería
-`cryptography` y reporta:
+Lee los archivos `.pem`, `.crt`, `.cer`, `.der` y `.key`, y los keystores
+PKCS#12 (`.p12`, `.pfx`) sin contraseña, con la librería `cryptography`, y
+reporta:
 
 - claves RSA, de curva elíptica, DSA o Ed25519: las rompe Shor;
 - claves RSA de menos de 2048 bits: se factorizan hoy;
@@ -18,13 +19,24 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from cryptography import x509
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa, x448, x25519
+from cryptography.hazmat.primitives.asymmetric import (
+    dsa,
+    ec,
+    ed448,
+    ed25519,
+    rsa,
+    x448,
+    x25519,
+)
+from cryptography.hazmat.primitives.serialization import pkcs12
 
 from app.engines.base import Finding, Severity
-from app.engines.crypto.pqc import _iter_files
+from app.engines.crypto.files import iter_repo_files
 
-CERT_SUFFIXES = (".pem", ".crt", ".cer", ".der", ".key")
+KEYSTORE_SUFFIXES = (".p12", ".pfx")
+CERT_SUFFIXES = (".pem", ".crt", ".cer", ".der", ".key", *KEYSTORE_SUFFIXES)
 MAX_FILE_BYTES = 1_000_000
 EXPIRING_DAYS = 30
 MIN_RSA_BITS = 2048
@@ -43,7 +55,7 @@ def scan_certs(repo_path: str, now: datetime | None = None) -> list[Finding]:
     repo = Path(repo_path)
     now = now or datetime.now(timezone.utc)
     findings: list[Finding] = []
-    for path in _iter_files(repo, CERT_SUFFIXES):
+    for path in iter_repo_files(repo, lambda p: p.suffix in CERT_SUFFIXES):
         try:
             if path.stat().st_size > MAX_FILE_BYTES:
                 continue
@@ -58,6 +70,8 @@ def scan_certs(repo_path: str, now: datetime | None = None) -> list[Finding]:
 
 def _load_objects(data: bytes, suffix: str) -> list[tuple[int, str, object]]:
     """Certificados y claves del archivo: (línea, tipo, objeto). Lo que no se puede leer se saltea."""
+    if suffix in KEYSTORE_SUFFIXES:
+        return _load_keystore(data)
     objects = []
     for match in _PEM_BLOCK.finditer(data):
         line = data.count(b"\n", 0, match.start()) + 1
@@ -70,6 +84,22 @@ def _load_objects(data: bytes, suffix: str) -> list[tuple[int, str, object]]:
         except ValueError:
             pass
     return objects
+
+
+def _load_keystore(data: bytes) -> list[tuple[int, str, object]]:
+    """Certificados de un keystore PKCS#12, o su clave si no trae ninguno.
+
+    Con contraseña no se puede leer y se saltea, como una clave cifrada. Un
+    archivo binario no tiene líneas: todo se reporta en la línea 1.
+    """
+    try:
+        store = pkcs12.load_pkcs12(data, password=None)
+    except (ValueError, TypeError):
+        return []
+    certificates = ([store.cert] if store.cert else []) + store.additional_certs
+    if certificates:
+        return [(1, "certificate", entry.certificate) for entry in certificates]
+    return [(1, "private_key", store.key.public_key())] if store.key else []
 
 
 def _load_pem(label: str, block: bytes) -> tuple[str, object] | None:
@@ -183,7 +213,7 @@ def _breaks_with_shor(key: object) -> bool:
 def _signature_hash(certificate: x509.Certificate) -> str | None:
     try:
         algorithm = certificate.signature_hash_algorithm
-    except Exception:
+    except UnsupportedAlgorithm:
         # Algoritmo de firma que la librería no conoce: no se puede decir nada.
         return None
     return algorithm.name if algorithm else None

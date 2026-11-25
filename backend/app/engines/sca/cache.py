@@ -22,7 +22,7 @@ import urllib.request
 from urllib.error import URLError
 
 from app.engines.sca.manifests import Dependency
-from app.engines.sca.osv import OsvClient
+from app.engines.sca.osv import USER_AGENT, OsvClient
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,11 @@ class KvCache:
             url,
             data=json.dumps(body).encode(),
             method=method,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_token}"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_token}",
+                "User-Agent": USER_AGENT,
+            },
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -89,7 +93,7 @@ class CachedOsvClient:
     def query_batch(self, dependencies: list[Dependency]) -> list[list[str]]:
         keys = [query_key(dep) for dep in dependencies]
         cached = self._read(keys, _parse_ids)
-        missing = [dep for dep, key in zip(dependencies, keys) if key not in cached]
+        missing = [dep for dep, key in zip(dependencies, keys, strict=True) if key not in cached]
         if missing:
             fresh = self.client.query_batch(missing)
             new = {query_key(dep): ids for dep, ids in zip(missing, fresh, strict=True)}

@@ -1,0 +1,46 @@
+{
+  "me": {
+    "user_id": "u_juani",
+    "role": "admin",
+    "organization": { "id": "org_demo", "name": "qubitor-team", "personal": false },
+    "permissions": { "connect_repositories": true, "start_scans": true, "update_findings": true }
+  },
+  "members": [
+    {
+      "user_id": "u_juani",
+      "name": "Juan Ignacio Wilt",
+      "image_url": null,
+      "role": "admin",
+      "joined_at": "2026-11-02T14:05:00Z",
+      "last_seen_at": "2026-11-17T18:20:00Z",
+      "is_you": true
+    },
+    {
+      "user_id": "u_vale",
+      "name": "Valentina Pértile",
+      "image_url": null,
+      "role": "admin",
+      "joined_at": "2026-11-03T10:00:00Z",
+      "last_seen_at": "2026-11-16T22:41:00Z",
+      "is_you": false
+    },
+    {
+      "user_id": "u_mati",
+      "name": "Matías Balda",
+      "image_url": null,
+      "role": "member",
+      "joined_at": "2026-11-04T09:12:00Z",
+      "last_seen_at": "2026-11-15T19:03:00Z",
+      "is_you": false
+    },
+    {
+      "user_id": "u_sin_nombre",
+      "name": null,
+      "image_url": null,
+      "role": "member",
+      "joined_at": "2026-11-10T16:30:00Z",
+      "last_seen_at": "2026-11-12T11:00:00Z",
+      "is_you": false
+    }
+  ]
+}

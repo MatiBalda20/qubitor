@@ -14,12 +14,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-from app.engines.base import Finding, Severity
+from app.engines.base import Finding
+from app.orchestrator.normalize import SEVERITY_ORDER
 
 SPEC_VERSION = "1.6"
 REPOSITORY_REF = "repository"
 
-_SEVERITY_ORDER = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
 
 
 @dataclass(frozen=True)
@@ -158,7 +158,7 @@ def quantum_threat(rule_id: str) -> str:
 def _component(ref: str, usages: list[tuple[str, Finding]]) -> dict:
     first = usages[0][1]
     name = algorithm_name(first)
-    worst = min((finding.severity for _, finding in usages), key=_SEVERITY_ORDER.index)
+    worst = min((finding.severity for _, finding in usages), key=SEVERITY_ORDER.index)
     return {
         "type": "cryptographic-asset",
         "bom-ref": ref,
@@ -183,7 +183,7 @@ def _certificate_component(ref: str, usages: list[tuple[str, Finding]]) -> dict:
     """Certificado X.509 versionado en el repo: sujeto, vencimiento y sus problemas."""
     first = usages[0][1]
     metadata = first.metadata
-    worst = min((finding.severity for _, finding in usages), key=_SEVERITY_ORDER.index)
+    worst = min((finding.severity for _, finding in usages), key=SEVERITY_ORDER.index)
     threat = min((quantum_threat(finding.rule_id) for _, finding in usages), key=_THREAT_ORDER.index)
     certificate: dict = {"certificateFormat": "X.509"}
     if metadata.get("subject"):

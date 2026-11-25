@@ -12,14 +12,13 @@ Módulo C) llama a `scan_pqc` y junta sus resultados con los de `classic.py`.
 import ast
 import copy
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.engines.base import Finding, Severity
-
-# Carpetas que no son código del usuario: dependencias, entornos y builds.
-IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build"}
+from app.engines.crypto.certs import scan_certs
+from app.engines.crypto.files import IGNORED_DIRS, iter_repo_files, read_text  # noqa: F401 (classic.py importa IGNORED_DIRS de acá)
 
 PYTHON_SUFFIXES = (".py",)
 JS_SUFFIXES = (".js", ".mjs", ".cjs", ".ts")
@@ -254,54 +253,24 @@ JS_RULES: list[tuple[re.Pattern, _Rule | Callable[[re.Match], _Rule | None]]] = 
 def scan_pqc(repo_path: str) -> list[Finding]:
     repo = Path(repo_path)
     findings: list[Finding] = []
-    for path in _iter_files(repo, PYTHON_SUFFIXES):
+    for path in iter_repo_files(repo, lambda p: p.suffix in PYTHON_SUFFIXES):
         tree = _parse_python(path)
         if tree is None:
             continue
         findings.extend(_scan_python_tree(tree, path.relative_to(repo).as_posix()))
-    for path in _iter_files(repo, JS_SUFFIXES):
-        source = _read_text(path)
+    for path in iter_repo_files(repo, lambda p: p.suffix in JS_SUFFIXES):
+        source = read_text(path)
         if source is None:
             continue
         findings.extend(_scan_js_source(source, path.relative_to(repo).as_posix()))
-    # Certificados y claves versionados (.pem, .crt, .key). Se importa acá porque
-    # certs.py usa funciones de este archivo.
-    from app.engines.crypto.certs import scan_certs
-
+    # Certificados, claves y keystores versionados (certs.py).
     findings.extend(scan_certs(repo_path))
     return findings
 
 
-def _iter_files(repo: Path, suffixes: tuple[str, ...]) -> Iterator[Path]:
-    repo_root = repo.resolve()
-    for path in repo.rglob("*"):
-        if path.suffix not in suffixes:
-            continue
-        # El repo no es de confianza: un enlace simbólico podría apuntar a un
-        # archivo del servidor y filtrar su contenido en el reporte.
-        if path.is_symlink() or not path.resolve().is_relative_to(repo_root):
-            continue
-        if not path.is_file():
-            continue
-        if any(part in IGNORED_DIRS for part in path.relative_to(repo).parts):
-            continue
-        yield path
-
-
-def _read_text(path: Path) -> str | None:
-    """Devuelve el contenido del archivo, o None si no se puede leer.
-
-    El contrato pide no lanzar excepciones por archivos ilegibles: se saltean.
-    """
-    try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-
-
 def _parse_python(path: Path) -> ast.Module | None:
     """Devuelve el AST del archivo, o None si no se puede leer o parsear."""
-    source = _read_text(path)
+    source = read_text(path)
     if source is None:
         return None
     try:

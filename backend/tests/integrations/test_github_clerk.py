@@ -105,6 +105,31 @@ def test_clave_secreta_rechazada(clerk_falso):
     assert "sk_test_clave" not in str(error.value)
 
 
+def test_manda_user_agent_propio(clerk_falso):
+    # Cloudflare bloquea `Python-urllib/3.x` con 403 / error code 1010.
+    pedidos, respuestas = clerk_falso
+    respuestas["oauth_github"] = [{"token": "gho_abc"}]
+
+    get_github_token("user_123")
+    # Request normaliza el nombre del header a `User-agent`.
+    assert pedidos[0].get_header("User-agent") == "Qubitor"
+
+
+def test_401_y_403_dan_mensajes_distintos(clerk_falso):
+    _, respuestas = clerk_falso
+    mensajes = {}
+    for code in (401, 403):
+        respuestas["oauth_github"] = code
+        with pytest.raises(GitHubUnavailable) as error:
+            get_github_token("user_1")
+        mensajes[code] = str(error.value)
+        assert "sk_test_clave" not in mensajes[code]
+
+    assert "clave secreta" in mensajes[401]
+    assert "403" in mensajes[403]
+    assert "clave" not in mensajes[403]
+
+
 def test_clerk_caido(clerk_falso):
     _, respuestas = clerk_falso
     respuestas["oauth_github"] = URLError("timeout")

@@ -1,5 +1,6 @@
 from app.engines.base import Severity
-from app.engines.crypto.pqc import _iter_files, scan_pqc
+from app.engines.crypto.files import iter_repo_files
+from app.engines.crypto.pqc import scan_pqc
 
 
 def _escanear(tmp_path, codigo):
@@ -28,7 +29,7 @@ def test_ignora_carpetas_de_dependencias(tmp_path):
     (tmp_path / ".venv").mkdir()
     (tmp_path / ".venv" / "site.py").write_text("")
 
-    encontrados = [p.name for p in _iter_files(tmp_path, (".py",))]
+    encontrados = [p.name for p in iter_repo_files(tmp_path, lambda p: p.suffix == ".py")]
 
     assert encontrados == ["app.py"]
 

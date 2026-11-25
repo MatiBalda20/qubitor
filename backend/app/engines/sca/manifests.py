@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.engines.crypto.pqc import IGNORED_DIRS
+from app.engines.crypto.files import iter_repo_files, read_text
 
 
 @dataclass(frozen=True)
@@ -126,25 +126,13 @@ def find_dependencies(repo_path: str) -> list[Dependency]:
     el lock tiene las versiones realmente instaladas.
     """
     repo = Path(repo_path)
-    repo_root = repo.resolve()
     dependencies: list[Dependency] = []
-    for path in sorted(repo.rglob("*")):
-        parser = _parser_for(path.name)
-        if parser is None:
-            continue
-        # El repo no es de confianza: no seguir enlaces a archivos de afuera.
-        if path.is_symlink() or not path.resolve().is_relative_to(repo_root):
-            continue
-        relative = path.relative_to(repo)
-        if any(part in IGNORED_DIRS for part in relative.parts) or not path.is_file():
-            continue
+    for path in iter_repo_files(repo, lambda p: _parser_for(p.name) is not None):
         if path.name == "package.json" and (path.parent / "package-lock.json").is_file():
             continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        dependencies.extend(parser(text, relative.as_posix()))
+        text = read_text(path)
+        if text is not None:
+            dependencies.extend(_parser_for(path.name)(text, path.relative_to(repo).as_posix()))
     return dependencies
 
 

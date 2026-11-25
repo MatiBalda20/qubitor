@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from xml.sax.saxutils import escape
 
 from app.engines.base import Finding, Severity
+from app.orchestrator.normalize import SEVERITY_ORDER
 from app.orchestrator.pipeline import ScanResult
 from app.storage.cyclonedx import algorithm_name
 
@@ -24,7 +25,6 @@ _SEVERITY_LABEL = {
     Severity.LOW: "Baja",
     Severity.INFO: "Informativa",
 }
-_SEVERITY_ORDER = list(_SEVERITY_LABEL)
 _SEVERITY_COLOR = {
     Severity.CRITICAL: "#c0262d",
     Severity.HIGH: "#c2581a",
@@ -46,7 +46,13 @@ def build_pdf(scan_id: str, repo_url: str, commit_sha: str, result: ScanResult,
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
 
     generated_at = generated_at or datetime.now(timezone.utc)
     styles = getSampleStyleSheet()
@@ -69,7 +75,7 @@ def build_pdf(scan_id: str, repo_url: str, commit_sha: str, result: ScanResult,
         p(f"<b>Risk Score:</b> {result.risk_score:g} / 100 · <b>Nota:</b> {_esc(result.grade)}", body),
     ]
 
-    summary = [["Gravedad", "Hallazgos"]] + [[_SEVERITY_LABEL[s], str(counts.get(s, 0))] for s in _SEVERITY_ORDER]
+    summary = [["Gravedad", "Hallazgos"]] + [[_SEVERITY_LABEL[s], str(counts.get(s, 0))] for s in SEVERITY_ORDER]
     table = Table(summary, colWidths=[40 * mm, 25 * mm], hAlign="LEFT")
     table.setStyle(TableStyle([
         ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
@@ -86,7 +92,7 @@ def build_pdf(scan_id: str, repo_url: str, commit_sha: str, result: ScanResult,
 
     problems = sorted(
         (f for f in findings if f.severity != Severity.INFO),
-        key=lambda f: (_SEVERITY_ORDER.index(f.severity), f.engine, f.file_path, f.line or 0),
+        key=lambda f: (SEVERITY_ORDER.index(f.severity), f.engine, f.file_path, f.line or 0),
     )
     story.append(p("Hallazgos", h2))
     if not problems:

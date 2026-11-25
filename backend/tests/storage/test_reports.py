@@ -167,6 +167,7 @@ def test_sin_variables_de_r2_no_guarda_nada(monkeypatch):
 
 def test_con_las_variables_arma_el_cliente_de_r2(monkeypatch):
     monkeypatch.delenv("R2_ENDPOINT", raising=False)
+    monkeypatch.delenv("R2_REGION", raising=False)
     monkeypatch.setenv("R2_ACCOUNT_ID", "cuenta123")
     monkeypatch.setenv("R2_ACCESS_KEY_ID", "clave-falsa")
     monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secreto-falso")
@@ -176,6 +177,21 @@ def test_con_las_variables_arma_el_cliente_de_r2(monkeypatch):
 
     assert storage.bucket == "qubitor-reportes"
     assert storage.client.meta.endpoint_url == "https://cuenta123.r2.cloudflarestorage.com"
+    assert storage.client.meta.region_name == "auto"
+
+
+def test_otro_servicio_s3_compatible_usa_su_endpoint_y_su_region(monkeypatch):
+    monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+    monkeypatch.setenv("R2_ENDPOINT", "https://proyecto.storage.supabase.co/storage/v1/s3")
+    monkeypatch.setenv("R2_REGION", "sa-east-1")
+    monkeypatch.setenv("R2_ACCESS_KEY_ID", "clave-falsa")
+    monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "secreto-falso")
+    monkeypatch.setenv("R2_BUCKET", "qubitor-reportes")
+
+    storage = get_report_storage()
+
+    assert storage.client.meta.endpoint_url == "https://proyecto.storage.supabase.co/storage/v1/s3"
+    assert storage.client.meta.region_name == "sa-east-1"
 
 
 @pytest.mark.parametrize("scan_id", ["../otro", "a/b", "", "x" * 65])

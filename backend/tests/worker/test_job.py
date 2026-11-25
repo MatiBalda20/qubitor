@@ -120,6 +120,31 @@ def test_siempre_borra_el_clon(store, clones, monkeypatch, tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+def test_crea_la_carpeta_de_clones_si_no_existe(store, clones, monkeypatch, tmp_path):
+    # En Render el contenedor arranca con /tmp vacío: /tmp/scans no existe.
+    carpeta = tmp_path / "tmp" / "scans"
+    monkeypatch.setenv("REPOS_DIR", str(carpeta))
+    monkeypatch.setattr(job_module, "default_engines", lambda: [MotorFijo()])
+
+    resumen = job_module.run_scan("abc", URL)
+
+    assert resumen["status"] == "completed"
+    assert carpeta.is_dir()
+    assert list(carpeta.iterdir()) == []
+
+
+def test_si_no_se_puede_crear_la_carpeta_el_escaneo_queda_fallido(store, monkeypatch, tmp_path):
+    # Antes la carpeta se creaba fuera del try: el escaneo quedaba «en curso» para siempre.
+    archivo = tmp_path / "no-es-carpeta"
+    archivo.write_text("")
+    monkeypatch.setenv("REPOS_DIR", str(archivo / "scans"))
+
+    with pytest.raises(OSError):
+        job_module.run_scan("abc", URL)
+
+    assert store.eventos[-1][:2] == ("failed", "abc")
+
+
 def test_borra_el_clon_si_explota_el_analisis(store, clones, monkeypatch, tmp_path):
     def explota(*args, **kwargs):
         raise ValueError("bug")

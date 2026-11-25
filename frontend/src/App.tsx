@@ -9,6 +9,7 @@ import ConnectPage from '@/features/connect/ConnectPage'
 import DashboardPage from '@/features/dashboard/DashboardPage'
 import DependenciesPage from '@/features/dependencies/DependenciesPage'
 import HistoryPage from '@/features/history/HistoryPage'
+import OrganizationPage from '@/features/organization/OrganizationPage'
 import PqcPage from '@/features/pqc/PqcPage'
 import { RequireAuth } from '@/lib/auth'
 import SecretsPage from '@/features/secrets/SecretsPage'
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="dependencies" element={<DependenciesPage />} />
         <Route path="history" element={<HistoryPage />} />
         <Route path="connect" element={<ConnectPage />} />
+        <Route path="organization" element={<OrganizationPage />} />
         <Route
           path="*"
           element={
