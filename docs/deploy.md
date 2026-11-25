@@ -7,7 +7,7 @@ La infraestructura de Render está definida como código en [`render.yaml`](../r
 | `staging` | `develop` | `qubitor-api-staging`, `qubitor-scan-worker-staging` | Cuando un commit de `develop` con la CI en verde llega al fork. |
 | `production` | `main` | `qubitor-api`, `qubitor-scan-worker` | Cuando un commit de `main` con la CI en verde llega al fork. |
 
-Flujo: `feature/*` → PR a `develop` → se prueba en staging → PR de `develop` a `main` → producción.
+Flujo: `feature/*` → PR a `develop` → se prueba en staging → PR de `develop` a `main` → producción. Cómo abrir y mergear cada PR (incluida la estrategia de merge): [CONTRIBUTING.md](CONTRIBUTING.md#3-pull-requests).
 
 ## Render despliega desde un fork
 
