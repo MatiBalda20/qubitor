@@ -36,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           upstream_sha=$(gh api "repos/$UPSTREAM/commits/$BRANCH" --jq .sha)
-          fork_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$BRANCH" --jq .sha 2>/dev/null || echo "")
+          fork_sha=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$BRANCH" | cut -f1)
           echo "Equipo: $upstream_sha | Fork: ${fork_sha:-(no existe)}"
           if [ "$upstream_sha" = "$fork_sha" ]; then
             echo "Ya está al día."
