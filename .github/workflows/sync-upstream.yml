@@ -1,0 +1,82 @@
+# Copia main y develop del repo del equipo a este fork, que es el que despliega Render.
+# Solo copia un commit si la CI del repo del equipo pasó en verde para ese commit,
+# y solo avanza las ramas (fast-forward): nunca reescribe historia.
+name: Sync desde el repo del equipo
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Una corrida a la vez; si se juntan, la nueva espera a la anterior.
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync ${{ matrix.branch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [main, develop]
+    env:
+      UPSTREAM: ValentinaPertile/qubitor
+      BRANCH: ${{ matrix.branch }}
+      REQUIRED_CHECKS: "Frontend (lint + build)|Backend (pytest)"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Comparar con el repo del equipo
+        id: plan
+        run: |
+          set -euo pipefail
+          upstream_sha=$(gh api "repos/$UPSTREAM/commits/$BRANCH" --jq .sha)
+          fork_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$BRANCH" --jq .sha 2>/dev/null || echo "")
+          echo "Equipo: $upstream_sha | Fork: ${fork_sha:-(no existe)}"
+          if [ "$upstream_sha" = "$fork_sha" ]; then
+            echo "Ya está al día."
+            echo "sync=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Último resultado de cada check requerido para ese commit.
+          runs=$(gh api "repos/$UPSTREAM/commits/$upstream_sha/check-runs?per_page=100")
+          IFS='|' read -ra checks <<< "$REQUIRED_CHECKS"
+          for check in "${checks[@]}"; do
+            result=$(jq -r --arg n "$check" \
+              '[.check_runs[] | select(.name == $n)] | sort_by(.id) | last | if . == null then "falta" elif .status != "completed" then "corriendo" else .conclusion end' \
+              <<< "$runs")
+            echo "$check: $result"
+            if [ "$result" != "success" ]; then
+              if [ "$result" = "falta" ] || [ "$result" = "corriendo" ]; then
+                echo "La CI todavía no terminó: se reintenta en la próxima corrida."
+              else
+                echo "::warning title=CI en rojo en $BRANCH::$check terminó en '$result' para $upstream_sha. No se copia al fork."
+              fi
+              echo "sync=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          echo "sync=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Copiar al fork
+        if: steps.plan.outputs.sync == 'true'
+        env:
+          SHA: ${{ steps.plan.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git init -q repo && cd repo
+          git remote add upstream "https://github.com/$UPSTREAM.git"
+          git remote add fork "https://x-access-token:${GH_TOKEN}@github.com/$GITHUB_REPOSITORY.git"
+          git fetch -q --no-tags fork "$BRANCH" || true
+          git fetch -q --no-tags upstream "$SHA"
+          # Sin --force: si la rama del fork se desvió, GitHub rechaza el push y la corrida falla.
+          git push fork "$SHA:refs/heads/$BRANCH"
+          echo "### $BRANCH → \`${SHA:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
