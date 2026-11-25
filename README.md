@@ -192,6 +192,8 @@ Algunos tests usan servicios reales y se activan solo si se piden:
 
 Las variables de cada servicio están documentadas en `backend/.env.example` y `frontend/.env.example`. Ningún secreto va en el repo.
 
+Los servicios de Render están definidos como código en [`render.yaml`](render.yaml), con dos entornos: **staging** despliega desde `develop` y **producción** desde `main` cuando la CI pasa. Cómo funcionan y qué secretos cargar en el panel: [docs/deploy.md](docs/deploy.md).
+
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yml`) corre en cada pull request y en cada push a `main`: lint y build del frontend, y `pytest` del backend.
