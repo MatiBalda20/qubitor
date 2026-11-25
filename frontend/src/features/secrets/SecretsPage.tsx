@@ -10,6 +10,7 @@ import { USE_MOCKS } from '@/lib/config'
 import { formatDateTime } from '@/lib/format'
 import { dashboardSource, type DashboardData } from '@/features/dashboard/dataSource'
 import type { FindingRecord, FindingStatus } from '@/types/Finding'
+import { RotationGuide } from './RotationGuide'
 
 type LoadState =
   | { status: 'loading' }
@@ -134,12 +135,15 @@ export default function SecretsPage() {
             <EmptyState icon={ShieldCheck} title="No hay secretos expuestos" description="El escaneo no detectó credenciales quemadas en el código." />
           </div>
         ) : (
-          <FindingsTable
-            findings={secretsFindings}
-            title="Credenciales expuestas"
-            engines={['secrets']}
-            onStatusChange={handleStatusChange}
-          />
+          <>
+            <FindingsTable
+              findings={secretsFindings}
+              title="Credenciales expuestas"
+              engines={['secrets']}
+              onStatusChange={handleStatusChange}
+            />
+            <RotationGuide findings={secretsFindings} />
+          </>
         )}
       </div>
     </>

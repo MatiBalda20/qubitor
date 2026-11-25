@@ -10,6 +10,7 @@ import { USE_MOCKS } from '@/lib/config'
 import { formatDateTime } from '@/lib/format'
 import { dashboardSource, type DashboardData } from '@/features/dashboard/dataSource'
 import type { FindingRecord, FindingStatus } from '@/types/Finding'
+import { SuggestedPatches } from './SuggestedPatches'
 
 type LoadState =
   | { status: 'loading' }
@@ -164,12 +165,15 @@ export default function CodePage() {
             />
           </div>
         ) : (
-          <FindingsTable
-            findings={codeFindings}
-            title="Hallazgos de código"
-            engines={['sast', 'crypto']}
-            onStatusChange={handleStatusChange}
-          />
+          <>
+            <FindingsTable
+              findings={codeFindings}
+              title="Hallazgos de código"
+              engines={['sast', 'crypto']}
+              onStatusChange={handleStatusChange}
+            />
+            <SuggestedPatches findings={codeFindings} />
+          </>
         )}
       </div>
     </>

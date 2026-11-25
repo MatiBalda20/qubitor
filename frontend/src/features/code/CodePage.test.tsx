@@ -31,7 +31,8 @@ describe('CodePage', () => {
     )
 
     expect(await screen.findByText('Uso de eval()')).toBeInTheDocument()
-    expect(screen.getByText('Uso de MD5')).toBeInTheDocument()
+    expect(screen.getAllByText('Uso de MD5')).toHaveLength(2)
+    expect(screen.getByText('Parches sugeridos')).toBeInTheDocument()
     expect(screen.queryByText('Clave RSA PQC')).not.toBeInTheDocument()
     expect(screen.queryByText('AWS Access Key expuesta')).not.toBeInTheDocument()
   })
