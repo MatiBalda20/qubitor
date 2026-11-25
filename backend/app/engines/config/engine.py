@@ -1,8 +1,12 @@
 """Motor de configuración insegura (Módulo C — ampliación 30/11).
 
-Analiza Dockerfile, docker-compose, nginx y Terraform (.tf) para detectar
-contenedores como root, TLS 1.0/1.1, cipher suites débiles y puertos o reglas
-de red expuestas.
+Analiza Dockerfile, docker-compose, nginx (incluidos archivos .conf genéricos)
+y Terraform (.tf) para detectar contenedores como root, TLS 1.0/1.1, cipher
+suites débiles y puertos o reglas de red expuestas.
+
+Nota de contrato: el motor se registra como `name = "config"`, pero emite sus
+hallazgos con `engine = "sast"` para respetar el contrato cerrado de `base.py`
+sin modificar el esquema compartido ni el frontend.
 """
 
 import re
@@ -13,17 +17,19 @@ from app.engines.base import Engine, Finding, Severity
 IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build"}
 MAX_FILE_BYTES = 1_000_000
 
+_DOCKER_FROM = re.compile(r"^\s*FROM\s+", re.IGNORECASE)
 _DOCKER_ROOT = re.compile(r"^\s*USER\s+(?:root|0)(?:\s|$)", re.IGNORECASE)
 _DOCKER_USER = re.compile(r"^\s*USER\s+\S+", re.IGNORECASE)
 
-_NGINX_OLD_TLS = re.compile(r"ssl_protocols\b[^;]*\bTLSv1(?:\.1)?\b", re.IGNORECASE)
+_NGINX_OLD_TLS = re.compile(r"ssl_protocols\b[^;]*\bTLSv1(?:\.[01])?(?![.\d])", re.IGNORECASE)
 _NGINX_WEAK_CIPHER = re.compile(r"ssl_ciphers\b[^;]*\b(?:RC4|MD5|DES|3DES|NULL|EXPORT|aNULL)\b", re.IGNORECASE)
 
+_COMPOSE_PORTS_KEY = re.compile(r"^(\s*)ports\s*:\s*$")
 _COMPOSE_PORT = re.compile(r"""^\s*-\s*["']?(?:0\.0\.0\.0:)?(\d+):\d+""")
 _COMPOSE_PRIVILEGED = re.compile(r"^\s*privileged\s*:\s*true\b", re.IGNORECASE)
 
 _TF_PUBLIC_CIDR = re.compile(r"""["']0\.0\.0\.0/0["']""")
-_TF_OLD_TLS = re.compile(r"""TLSv1(?:\.1)?|ELBSecurityPolicy-2016-08""", re.IGNORECASE)
+_TF_OLD_TLS = re.compile(r"""TLSv1(?:\.[01])?(?![.\d])|ELBSecurityPolicy-2016-08""", re.IGNORECASE)
 
 
 class ConfigEngine(Engine):
@@ -62,36 +68,39 @@ class ConfigEngine(Engine):
 
     def _scan_dockerfile(self, content: str, file_path: str) -> list[Finding]:
         findings: list[Finding] = []
-        lines = content.splitlines()
-        has_user = False
+        stages: list[tuple[int, str, list[tuple[int, str, bool]]]] = []
 
-        for i, line in enumerate(lines, start=1):
-            if _DOCKER_ROOT.match(line):
-                has_user = True
+        for i, line in enumerate(content.splitlines(), start=1):
+            if _DOCKER_FROM.match(line):
+                stages.append((i, line.strip()[:200], []))
+            elif stages and _DOCKER_USER.match(line):
+                stages[-1][2].append((i, line.strip()[:200], bool(_DOCKER_ROOT.match(line))))
+
+        for from_line, from_snippet, users in stages:
+            if not users:
                 findings.append(self._finding(
-                    rule="config.docker.root-user",
-                    title="Contenedor ejecutándose como root en Dockerfile",
-                    severity=Severity.HIGH,
+                    rule="config.docker.missing-user",
+                    title="Dockerfile sin directiva USER (corre como root por defecto)",
+                    severity=Severity.MEDIUM,
                     file_path=file_path,
-                    line=i,
-                    snippet=line.strip()[:200],
-                    description="Ejecutar el contenedor como root amplía el impacto ante un escape de contenedor. Definí un usuario sin privilegios con USER.",
+                    line=from_line,
+                    snippet=from_snippet,
+                    description="Sin una directiva USER explícita, Docker ejecuta el proceso principal como root.",
                     cwe="CWE-250",
                 ))
-            elif _DOCKER_USER.match(line):
-                has_user = True
-
-        if not has_user and any(l.strip().upper().startswith("FROM ") for l in lines):
-            findings.append(self._finding(
-                rule="config.docker.missing-user",
-                title="Dockerfile sin directiva USER (corre como root por defecto)",
-                severity=Severity.MEDIUM,
-                file_path=file_path,
-                line=1,
-                snippet=lines[0].strip()[:200] if lines else "",
-                description="Sin una directiva USER explícita, Docker ejecuta el proceso principal como root.",
-                cwe="CWE-250",
-            ))
+            else:
+                last_line, last_snippet, is_root = users[-1]
+                if is_root:
+                    findings.append(self._finding(
+                        rule="config.docker.root-user",
+                        title="Contenedor ejecutándose como root en Dockerfile",
+                        severity=Severity.HIGH,
+                        file_path=file_path,
+                        line=last_line,
+                        snippet=last_snippet,
+                        description="Ejecutar el contenedor como root amplía el impacto ante un escape de contenedor. Definí un usuario sin privilegios con USER.",
+                        cwe="CWE-250",
+                    ))
         return findings
 
     def _scan_nginx(self, content: str, file_path: str) -> list[Finding]:
@@ -126,10 +135,21 @@ class ConfigEngine(Engine):
 
     def _scan_compose(self, content: str, file_path: str) -> list[Finding]:
         findings: list[Finding] = []
+        ports_indent: int | None = None
+
         for i, line in enumerate(content.splitlines(), start=1):
             stripped = line.strip()
-            if stripped.startswith("#"):
+            if not stripped or stripped.startswith("#"):
                 continue
+
+            indent = len(line) - len(line.lstrip())
+            if ports_indent is not None and indent <= ports_indent:
+                ports_indent = None
+
+            if match := _COMPOSE_PORTS_KEY.match(line):
+                ports_indent = len(match.group(1))
+                continue
+
             if _COMPOSE_PRIVILEGED.match(line):
                 findings.append(self._finding(
                     rule="config.compose.privileged",
@@ -141,7 +161,7 @@ class ConfigEngine(Engine):
                     description="privileged: true otorga acceso casi total al host. Eliminá esta opción y usá capabilities mínimas.",
                     cwe="CWE-250",
                 ))
-            elif match := _COMPOSE_PORT.match(line):
+            elif ports_indent is not None and (match := _COMPOSE_PORT.match(line)):
                 port = match.group(1)
                 findings.append(self._finding(
                     rule="config.compose.exposed-port",

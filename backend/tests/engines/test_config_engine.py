@@ -43,3 +43,26 @@ def test_detecta_terraform_cidr_abierto(tmp_path):
     (tmp_path / "main.tf").write_text('cidr_blocks = ["0.0.0.0/0"]\n')
     hallazgos = ConfigEngine().scan(str(tmp_path))
     assert [h.rule_id for h in hallazgos] == ["config.terraform.public-cidr"]
+
+def test_nginx_tls_moderno_no_reporta(tmp_path):
+    (tmp_path / "nginx.conf").write_text("server {\n  ssl_protocols TLSv1.2 TLSv1.3;\n}\n")
+    assert ConfigEngine().scan(str(tmp_path)) == []
+
+
+def test_terraform_tls_moderno_no_reporta(tmp_path):
+    (tmp_path / "main.tf").write_text('minimum_protocol_version = "TLSv1.2_2021"\n')
+    assert ConfigEngine().scan(str(tmp_path)) == []
+
+
+def test_dockerfile_root_seguido_de_usuario_no_root_no_reporta(tmp_path):
+    (tmp_path / "Dockerfile").write_text(
+        "FROM python:3.12-slim\nUSER root\nRUN apt-get update\nUSER appuser\n"
+    )
+    assert ConfigEngine().scan(str(tmp_path)) == []
+
+
+def test_compose_no_reporta_puerto_fuera_de_ports(tmp_path):
+    (tmp_path / "docker-compose.yml").write_text(
+        "services:\n  app:\n    command:\n      - '8080:80'\n"
+    )
+    assert ConfigEngine().scan(str(tmp_path)) == []

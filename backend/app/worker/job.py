@@ -2,10 +2,8 @@
 
 import os
 import tempfile
-from app.engines.config import ConfigEngine
-
 from rq import get_current_job
-
+from app.engines.config import ConfigEngine
 from app.ai.pipeline import apply_ai
 from app.engines.base import Engine
 from app.engines.crypto import CryptoEngine
