@@ -62,3 +62,20 @@ def test_salida_que_no_es_json_lanza_bandit_error(tmp_path, monkeypatch):
     )
     with pytest.raises(BanditError, match="JSON"):
         run_bandit(str(tmp_path))
+
+def test_bandit_no_recibe_credenciales_y_corre_aislado(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://secreto")
+    monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test_secreto")
+    llamadas = []
+
+    def fake_run(command, **kwargs):
+        llamadas.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout='{"results": []}', stderr="")
+
+    monkeypatch.setattr(bandit.subprocess, "run", fake_run)
+    run_bandit(str(tmp_path))
+
+    command, kwargs = llamadas[0]
+    assert "-I" in command
+    assert "DATABASE_URL" not in kwargs["env"]
+    assert "CLERK_SECRET_KEY" not in kwargs["env"]
