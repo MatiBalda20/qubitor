@@ -524,6 +524,21 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Valentina Pértile de la Vega
 - **PR:** test(pqc): actualizar el test del repo de demo con las fallas del Módulo C
 
+### [2026-11-16] Health check del scan-worker para correrlo como Web Service free en Render
+
+- **Problema abordado:** Los Background Workers de Render son pagos, así que el scan-worker se despliega como Web Service free. Render exige que un Web Service abra `$PORT`; el worker de RQ no abría ninguno y el deploy fallaba con «No open ports detected». Resolverlo desde el Docker Command no sirvió: con `sh -c '...'` el firewall de Render bloquea el guardado (403 en `api.render.com/graphql`, lo toma como inyección de comandos), y sin shell (`python -m http.server ... & python -m app.worker.run`) el `&` llega como argumento y el contenedor sale con status 2. Por eso el servidor de health tenía que vivir en el código del worker.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5). Le pasé la tarea con los límites: solo la stdlib, levantar el servidor solo si existe `PORT`, que la función devuelva el server para apagarlo en los tests, no servir archivos, silenciar los logs por pedido, tener en cuenta el fork de RQ, no tocar el Dockerfile ni `job.py`, y no hacer push.
+- **Código / Arquitectura generada:**
+  - `backend/app/worker/run.py`: `start_health_server()` levanta un `ThreadingHTTPServer` en `0.0.0.0:$PORT` en un thread daemon, con un handler propio que responde `200 ok` en `GET /health` y `404` en cualquier otra ruta (no hereda de `SimpleHTTPRequestHandler`, así que no puede servir `/tmp/scans` ni `/app`) y con `log_message` silenciado. Sin `PORT` devuelve `None` y no abre nada. `main()` lo llama antes de `worker.work(...)`. El thread vive en el proceso padre de RQ, que sigue atendiendo mientras el hijo forkeado escanea.
+  - `backend/tests/worker/test_run_health.py`: 8 tests (200 en `/health`, 404 en `/otra`, `/`, `/tmp/scans`, `/app` y `/../etc/passwd`, sin `PORT` no hay puerto abierto, y en Linux sigue respondiendo con un hijo forkeado trabajando). Cada test apaga el server.
+  - `infra/worker-keepalive/`: el scan-worker se suma a `TARGETS` y la ventana baja a 12 h/día.
+- **Validación y Corrección Humana:**
+  - `python -m pytest -q` desde `backend/` en un contenedor `python:3.11` (Linux, con `requirements-dev.txt`, como en CI): 496 pasan y 125 se saltean. Pasan los 8 tests nuevos, incluido el de fork (en Windows se saltea).
+  - Corrección de la cuenta de horas: el cron que sugería `wrangler.toml`, `*/10 0,12-23 * * *`, son 13 h de pings por día (2 × 13 × 31 = 806 h > 750 h). Se usó `*/10 12-23 * * *` (9:00 a 20:59 ART): 2 × 12 × 31 = 744 h.
+  - La URL del scan-worker en `TARGETS` queda como marcador hasta tener la definitiva.
+- **Responsable:** Matías Balda
+- **PR:** #(pendiente)
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**
