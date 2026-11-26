@@ -184,7 +184,7 @@ Algunos tests usan servicios reales y se activan solo si se piden:
 
 | Pieza | Dónde | Cómo |
 |---|---|---|
-| Frontend | Cloudflare Workers (archivos estáticos) | Build desde `frontend/` con `npm run build` y `wrangler deploy --assets=./dist`. `VITE_API_URL` y `VITE_CLERK_PUBLISHABLE_KEY` son variables de build: si cambian, hay que volver a construir. |
+| Frontend | Cloudflare Workers (archivos estáticos) | Build desde `frontend/` con `npm run build` y `npx wrangler deploy`, que toma la configuración de `frontend/wrangler.jsonc` (incluido el modo SPA, necesario para que funcione la vuelta del login). `VITE_API_URL` y `VITE_CLERK_PUBLISHABLE_KEY` son variables de build: si cambian, hay que volver a construir. |
 | API | Render | `uvicorn app.main:app`. `CORS_ORIGINS` tiene que incluir la URL del frontend. |
 | Scan-worker | Render, con `backend/worker/Dockerfile` | `python -m app.worker.run` |
 | Base de datos | Supabase | Usar el **session pooler** (Render no sale por IPv6, que es lo único que acepta la conexión directa) con el formato `postgresql+psycopg://…?sslmode=require`. Las tablas se crean con `alembic upgrade head`. |
