@@ -121,6 +121,20 @@ class SecretsEngine(Engine):
         """Recorre los últimos commits para detectar secretos borrados pero aún en la historia."""
         if not (repo / ".git").exists():
             return []
+
+        try:
+            count_proc = subprocess.run(
+                ["git", "-C", str(repo), "rev-list", "--count", "HEAD"],
+                env=_git_env(),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if count_proc.returncode != 0 or int(count_proc.stdout.strip() or "0") <= 1:
+                return []
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            return []
+
         try:
             proc = subprocess.run(
                 ["git", "-C", str(repo), "log", f"-n{max_commits}", "-p", "--no-color", "--pretty=format:COMMIT:%H"],
@@ -150,6 +164,10 @@ class SecretsEngine(Engine):
                 current_file = raw_line.removeprefix("+++ b/").strip()
                 continue
             if not raw_line.startswith("+") or raw_line.startswith("+++"):
+                continue
+
+            rel_path = Path(current_file)
+            if any(part in IGNORED_DIRS for part in rel_path.parts) or rel_path.suffix.lower() in IGNORED_EXTENSIONS:
                 continue
 
             line = raw_line[1:]

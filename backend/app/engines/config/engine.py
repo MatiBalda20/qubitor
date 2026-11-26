@@ -18,18 +18,34 @@ IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", 
 MAX_FILE_BYTES = 1_000_000
 
 _DOCKER_FROM = re.compile(r"^\s*FROM\s+", re.IGNORECASE)
-_DOCKER_ROOT = re.compile(r"^\s*USER\s+(?:root|0)(?:\s|$)", re.IGNORECASE)
+_DOCKER_ROOT = re.compile(r"^\s*USER\s+(?:root|0)(?:[:\s]|$)", re.IGNORECASE)
 _DOCKER_USER = re.compile(r"^\s*USER\s+\S+", re.IGNORECASE)
 
 _NGINX_OLD_TLS = re.compile(r"ssl_protocols\b[^;]*\bTLSv1(?:\.[01])?(?![.\d])", re.IGNORECASE)
-_NGINX_WEAK_CIPHER = re.compile(r"ssl_ciphers\b[^;]*\b(?:RC4|MD5|DES|3DES|NULL|EXPORT|aNULL)\b", re.IGNORECASE)
+_NGINX_CIPHERS_LINE = re.compile(r"ssl_ciphers\s+([^;]+)", re.IGNORECASE)
+_WEAK_CIPHER_TOKEN = re.compile(r"\b(?:RC4|MD5|DES|3DES|NULL|EXPORT|aNULL)\b", re.IGNORECASE)
 
 _COMPOSE_PORTS_KEY = re.compile(r"^(\s*)ports\s*:\s*$")
 _COMPOSE_PORT = re.compile(r"""^\s*-\s*["']?(?:0\.0\.0\.0:)?(\d+):\d+""")
 _COMPOSE_PRIVILEGED = re.compile(r"^\s*privileged\s*:\s*true\b", re.IGNORECASE)
 
+_TF_EGRESS_START = re.compile(r"^\s*egress\s*\{")
 _TF_PUBLIC_CIDR = re.compile(r"""["']0\.0\.0\.0/0["']""")
 _TF_OLD_TLS = re.compile(r"""TLSv1(?:\.[01])?(?![.\d])|ELBSecurityPolicy-2016-08""", re.IGNORECASE)
+
+
+def _has_weak_nginx_cipher(line: str) -> bool:
+    match = _NGINX_CIPHERS_LINE.search(line)
+    if not match:
+        return False
+    raw_list = match.group(1).strip().strip("'\"")
+    for token in raw_list.split(":"):
+        cleaned = token.strip()
+        if not cleaned or cleaned.startswith(("!", "-")):
+            continue
+        if _WEAK_CIPHER_TOKEN.search(cleaned):
+            return True
+    return False
 
 
 class ConfigEngine(Engine):
@@ -76,21 +92,26 @@ class ConfigEngine(Engine):
             elif stages and _DOCKER_USER.match(line):
                 stages[-1][2].append((i, line.strip()[:200], bool(_DOCKER_ROOT.match(line))))
 
-        for from_line, from_snippet, users in stages:
+        if not stages:
+            return findings
+
+        last_idx = len(stages) - 1
+        for idx, (from_line, from_snippet, users) in enumerate(stages):
             if not users:
-                findings.append(self._finding(
-                    rule="config.docker.missing-user",
-                    title="Dockerfile sin directiva USER (corre como root por defecto)",
-                    severity=Severity.MEDIUM,
-                    file_path=file_path,
-                    line=from_line,
-                    snippet=from_snippet,
-                    description="Sin una directiva USER explícita, Docker ejecuta el proceso principal como root.",
-                    cwe="CWE-250",
-                ))
+                if idx == last_idx:
+                    findings.append(self._finding(
+                        rule="config.docker.missing-user",
+                        title="Dockerfile sin directiva USER (corre como root por defecto)",
+                        severity=Severity.MEDIUM,
+                        file_path=file_path,
+                        line=from_line,
+                        snippet=from_snippet,
+                        description="Sin una directiva USER explícita en la etapa final, Docker ejecuta el proceso principal como root.",
+                        cwe="CWE-250",
+                    ))
             else:
                 last_line, last_snippet, is_root = users[-1]
-                if is_root:
+                if is_root and idx == last_idx:
                     findings.append(self._finding(
                         rule="config.docker.root-user",
                         title="Contenedor ejecutándose como root en Dockerfile",
@@ -120,7 +141,7 @@ class ConfigEngine(Engine):
                     description="TLS 1.0 y 1.1 están deprecados y son vulnerables a ataques de downgrade. Permití solo TLSv1.2 y TLSv1.3.",
                     cwe="CWE-327",
                 ))
-            if _NGINX_WEAK_CIPHER.search(line):
+            if _has_weak_nginx_cipher(line):
                 findings.append(self._finding(
                     rule="config.nginx.weak-cipher",
                     title="Cipher suite débil configurada en nginx",
@@ -143,7 +164,7 @@ class ConfigEngine(Engine):
                 continue
 
             indent = len(line) - len(line.lstrip())
-            if ports_indent is not None and indent <= ports_indent:
+            if ports_indent is not None and (indent < ports_indent or (indent == ports_indent and not stripped.startswith("-"))):
                 ports_indent = None
 
             if match := _COMPOSE_PORTS_KEY.match(line):
@@ -177,11 +198,19 @@ class ConfigEngine(Engine):
 
     def _scan_terraform(self, content: str, file_path: str) -> list[Finding]:
         findings: list[Finding] = []
+        egress_depth = 0
+
         for i, line in enumerate(content.splitlines(), start=1):
             stripped = line.strip()
             if stripped.startswith(("#", "//")):
                 continue
-            if _TF_PUBLIC_CIDR.search(line):
+
+            if egress_depth == 0 and _TF_EGRESS_START.match(line):
+                egress_depth = line.count("{") - line.count("}")
+            elif egress_depth > 0:
+                egress_depth = max(0, egress_depth + line.count("{") - line.count("}"))
+
+            if egress_depth == 0 and _TF_PUBLIC_CIDR.search(line):
                 findings.append(self._finding(
                     rule="config.terraform.public-cidr",
                     title="Regla de red abierta a 0.0.0.0/0 en Terraform",

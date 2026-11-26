@@ -96,7 +96,7 @@ def test_detecta_secreto_borrado_en_historial_de_git(tmp_path):
     hallazgos = SecretsEngine().scan(str(tmp_path))
     reglas = [h.rule_id for h in hallazgos]
     assert "secrets.aws.history" in reglas
-    assert "AKIAIOSFODNN7EXAMPLE" not in hallazgos[0].snippet
+    assert all("AKIAIOSFODNN7EXAMPLE" not in h.snippet for h in hallazgos)
 
 def test_clon_superficial_no_duplica_secreto_en_head(tmp_path):
     import subprocess

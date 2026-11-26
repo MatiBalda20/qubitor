@@ -66,3 +66,21 @@ def test_compose_no_reporta_puerto_fuera_de_ports(tmp_path):
         "services:\n  app:\n    command:\n      - '8080:80'\n"
     )
     assert ConfigEngine().scan(str(tmp_path)) == []
+
+def test_nginx_ciphers_excluidos_no_reportan(tmp_path):
+    (tmp_path / "nginx.conf").write_text("server {\n  ssl_ciphers HIGH:!aNULL:!MD5;\n}\n")
+    assert ConfigEngine().scan(str(tmp_path)) == []
+
+
+def test_dockerfile_multistage_no_reporta_build_sin_user(tmp_path):
+    (tmp_path / "Dockerfile").write_text(
+        "FROM node:20 AS build\nRUN npm ci\nFROM nginx:alpine\nUSER nginx\n"
+    )
+    assert ConfigEngine().scan(str(tmp_path)) == []
+
+
+def test_terraform_egress_publico_no_reporta(tmp_path):
+    (tmp_path / "main.tf").write_text(
+        'egress {\n  cidr_blocks = ["0.0.0.0/0"]\n}\n'
+    )
+    assert ConfigEngine().scan(str(tmp_path)) == []
