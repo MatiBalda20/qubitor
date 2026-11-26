@@ -1,5 +1,7 @@
 """API de Qubitor (Módulo A)."""
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,7 +12,19 @@ from app.config import cors_origins
 from app.integrations.github.routes import router as github_router
 from app.integrations.github.webhooks import router as webhooks_router
 
-app = FastAPI(title="Qubitor API")
+
+def docs_enabled() -> bool:
+    """La documentación interactiva (/docs, /openapi.json) solo fuera de Render, salvo API_DOCS=true (QUB-09)."""
+    return not os.getenv("RENDER") or os.getenv("API_DOCS", "").lower() == "true"
+
+
+_DOCS = docs_enabled()
+app = FastAPI(
+    title="Qubitor API",
+    docs_url="/docs" if _DOCS else None,
+    redoc_url="/redoc" if _DOCS else None,
+    openapi_url="/openapi.json" if _DOCS else None,
+)
 app.include_router(router)
 app.include_router(organization_router)
 app.include_router(github_router)
