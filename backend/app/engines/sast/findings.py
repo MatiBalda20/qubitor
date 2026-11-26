@@ -46,6 +46,14 @@ _TITLES = {
     "B608": "Consulta SQL armada con strings (posible inyección SQL)",
 }
 
+# B101 marca cada `assert` porque Python los elimina al ejecutar con -O. En el
+# código de la aplicación es un riesgo real (un control de seguridad hecho con
+# assert desaparece), pero en los tests el assert es la forma de escribir un
+# test con pytest: reportarlo ahí solo agrega ruido (en el propio repo de
+# Qubitor eran 960 de 1020 hallazgos de Bandit).
+_TEST_ONLY_NOISE = {"B101"}
+_TEST_DIRS = {"test", "tests"}
+
 # Prefijo "N " con el número de línea que Bandit agrega a cada línea del código.
 _LINE_NUMBER = re.compile(r"^\d+ ?", re.MULTILINE)
 
@@ -61,8 +69,26 @@ def bandit_to_findings(output: dict, repo_path: str) -> list[Finding]:
         file_path = _relative_path(result.get("filename", ""), root)
         if file_path is None:
             continue
+        if result.get("test_id") in _TEST_ONLY_NOISE and is_test_file(file_path):
+            continue
         findings.append(_to_finding(result, file_path))
     return findings
+
+
+def is_test_file(file_path: str) -> bool:
+    """True si la ruta (relativa al repo) es un archivo de tests de Python.
+
+    Cuenta las carpetas `test/` y `tests/` y las convenciones de pytest:
+    `test_*.py`, `*_test.py` y `conftest.py`.
+    """
+    path = Path(file_path)
+    name = path.name
+    return (
+        bool(_TEST_DIRS & set(path.parts[:-1]))
+        or (name.startswith("test_") and name.endswith(".py"))
+        or name.endswith("_test.py")
+        or name == "conftest.py"
+    )
 
 
 def _to_finding(result: dict, file_path: str) -> Finding:

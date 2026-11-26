@@ -1,8 +1,15 @@
 import math
+import os
 import re
+import subprocess
 from pathlib import Path
 
 from app.engines.base import Engine, Finding, Severity
+
+_GIT_ENV_KEYS = ("PATH", "HOME", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE")
+
+def _git_env() -> dict[str, str]:
+    return {k: os.environ[k] for k in _GIT_ENV_KEYS if k in os.environ}
 
 IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build"}
 IGNORED_EXTENSIONS = {".lock", ".bin", ".exe", ".dll", ".so", ".pdf", ".png", ".jpg"}
@@ -48,6 +55,8 @@ class SecretsEngine(Engine):
             relative_path = file_path.relative_to(repo).as_posix()
             findings.extend(self._scan_content(content, relative_path))
 
+        head_keys = {(f.rule_id, f.file_path, f.snippet) for f in findings}
+        findings.extend(self._scan_git_history(repo, head_keys=head_keys))
         return findings
 
     def _should_ignore(self, path: Path, repo_root: Path) -> bool:
@@ -101,4 +110,109 @@ class SecretsEngine(Engine):
                         metadata={"secret_type": rule_id.split(".")[-1]}
                     ))
 
+        return findings
+
+    def _scan_git_history(
+        self,
+        repo: Path,
+        max_commits: int = 20,
+        head_keys: set[tuple[str, str, str]] | None = None,
+    ) -> list[Finding]:
+        """Recorre los últimos commits para detectar secretos borrados pero aún en la historia."""
+        if not (repo / ".git").exists():
+            return []
+
+        def _commit_count() -> int:
+            res = subprocess.run(
+                ["git", "-C", str(repo), "rev-list", "--count", "HEAD"],
+                env=_git_env(),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return int(res.stdout.strip() or "0") if res.returncode == 0 else 0
+
+        try:
+            count = _commit_count()
+            if count <= 1:
+                subprocess.run(
+                    ["git", "-C", str(repo), "fetch", f"--deepen={max_commits}"],
+                    env=_git_env(),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                count = _commit_count()
+            if count <= 1:
+                return []
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            return []
+
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(repo), "log", f"-n{max_commits}", "-p", "--no-color", "--pretty=format:COMMIT:%H"],
+                env=_git_env(),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+
+        if proc.returncode != 0 or not proc.stdout:
+            return []
+
+        hunk_re = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
+        findings: list[Finding] = []
+        seen: set[tuple[str, str, str]] = set()
+        current_commit = ""
+        current_file = "git-history"
+        current_line = 0
+
+        for raw_line in proc.stdout.splitlines():
+            if raw_line.startswith("COMMIT:"):
+                current_commit = raw_line.removeprefix("COMMIT:").strip()[:12]
+                continue
+            if raw_line.startswith("+++ b/"):
+                current_file = raw_line.removeprefix("+++ b/").strip()
+                continue
+            if hunk_match := hunk_re.match(raw_line):
+                current_line = int(hunk_match.group(1))
+                continue
+            if raw_line.startswith(" "):
+                current_line += 1
+                continue
+            if not raw_line.startswith("+") or raw_line.startswith("+++"):
+                continue
+
+            line_num = current_line
+            current_line += 1
+
+            rel_path = Path(current_file)
+            if any(part in IGNORED_DIRS for part in rel_path.parts) or rel_path.suffix.lower() in IGNORED_EXTENSIONS:
+                continue
+
+            line = raw_line[1:]
+            for f in self._scan_content(line, current_file):
+                key = (f.rule_id, current_file, f.snippet)
+                if key in seen or (head_keys and key in head_keys):
+                    continue
+                seen.add(key)
+                findings.append(Finding(
+                    engine=self.name,
+                    rule_id=f"{f.rule_id}.history",
+                    title=f"{f.title} (en historial de Git)",
+                    severity=Severity.CRITICAL,
+                    file_path=current_file,
+                    line=line_num or None,
+                    snippet=f.snippet,
+                    description=(
+                        f"Secreto detectado en el commit {current_commit}. Aunque haya sido borrado "
+                        "en un commit posterior, sigue expuesto en el historial de Git. Rotá la credencial inmediatamente."
+                    ),
+                    cwe="CWE-798",
+                    metadata={**f.metadata, "in_git_history": True, "commit": current_commit},
+                ))
         return findings

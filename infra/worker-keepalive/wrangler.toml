@@ -25,7 +25,7 @@ crons = ["*/10 12-23 * * *"]
 [vars]
 # URLs base separadas por coma, sin "/health" (el worker lo agrega).
 # La API y el scan-worker (que expone /health si Render le pasa PORT).
-TARGETS = "https://qubitor-api.onrender.com,https://<URL-DEL-SCAN-WORKER>.onrender.com"
+TARGETS = "https://qubitor-api.onrender.com,https://qubitor-scan-worker.onrender.com"
 # Cuánto esperar cada respuesta. Un cold start de Render puede tardar ~50 s;
 # aunque se corte antes, el pedido ya despertó al servicio.
 TIMEOUT_MS = "30000"

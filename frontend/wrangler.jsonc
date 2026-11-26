@@ -1,0 +1,14 @@
+// Deploy del frontend en Cloudflare Workers (archivos estáticos).
+// Uso: npm run build && npx wrangler deploy
+{
+  // Tiene que coincidir con el Worker actual: https://qubitor.scanner-app.workers.dev
+  "name": "qubitor",
+  "compatibility_date": "2025-11-01",
+  "assets": {
+    "directory": "./dist",
+    // Es una SPA: cualquier ruta sin archivo (/sso-callback, /dashboard, …) devuelve
+    // index.html y React Router decide qué mostrar. Sin esto, la vuelta del login
+    // con GitHub a /sso-callback da 404.
+    "not_found_handling": "single-page-application"
+  }
+}

@@ -177,7 +177,7 @@ def test_escaneo_parcial_si_falla_un_motor(store, clones, monkeypatch):
 
 
 def test_motores_registrados():
-    assert {motor.name for motor in job_module.default_engines()} == {"sast", "sca", "secrets", "crypto"}
+    assert {motor.name for motor in job_module.default_engines()} == {"sast", "sca", "secrets", "crypto", "config"}
 
 
 def test_detecta_criptografia_debil(store, clones, monkeypatch):
