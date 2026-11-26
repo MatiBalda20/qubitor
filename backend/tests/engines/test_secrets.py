@@ -126,3 +126,37 @@ def test_clon_superficial_no_duplica_secreto_en_head(tmp_path):
     reglas = [h.rule_id for h in hallazgos]
     assert "secrets.aws" in reglas
     assert "secrets.aws.history" not in reglas
+
+def test_clon_superficial_detecta_secreto_borrado_con_deepen(tmp_path):
+    import subprocess
+
+    origen = tmp_path / "origen"
+    origen.mkdir()
+
+    def git(cwd, *args):
+        subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
+
+    git(origen, "init")
+    git(origen, "config", "user.email", "test@qubitor.invalid")
+    git(origen, "config", "user.name", "Test")
+
+    archivo = origen / "config.py"
+    archivo.write_text('AWS_KEY = "AKIAIOSFODNN7EXAMPLE"\n')
+    git(origen, "add", "config.py")
+    git(origen, "commit", "-m", "agregar secreto")
+
+    archivo.write_text('AWS_KEY = ""\n')
+    git(origen, "add", "config.py")
+    git(origen, "commit", "-m", "borrar secreto")
+
+    clon = tmp_path / "clon"
+    subprocess.run(
+        ["git", "clone", "--depth", "1", f"file://{origen.as_posix()}", str(clon)],
+        check=True,
+        capture_output=True,
+    )
+
+    hallazgos = SecretsEngine().scan(str(clon))
+    history = [h for h in hallazgos if h.rule_id == "secrets.aws.history"]
+    assert len(history) == 1
+    assert history[0].line == 1

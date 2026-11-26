@@ -122,15 +122,28 @@ class SecretsEngine(Engine):
         if not (repo / ".git").exists():
             return []
 
-        try:
-            count_proc = subprocess.run(
+        def _commit_count() -> int:
+            res = subprocess.run(
                 ["git", "-C", str(repo), "rev-list", "--count", "HEAD"],
                 env=_git_env(),
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
-            if count_proc.returncode != 0 or int(count_proc.stdout.strip() or "0") <= 1:
+            return int(res.stdout.strip() or "0") if res.returncode == 0 else 0
+
+        try:
+            count = _commit_count()
+            if count <= 1:
+                subprocess.run(
+                    ["git", "-C", str(repo), "fetch", f"--deepen={max_commits}"],
+                    env=_git_env(),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                count = _commit_count()
+            if count <= 1:
                 return []
         except (OSError, ValueError, subprocess.TimeoutExpired):
             return []
@@ -151,10 +164,12 @@ class SecretsEngine(Engine):
         if proc.returncode != 0 or not proc.stdout:
             return []
 
+        hunk_re = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
         findings: list[Finding] = []
         seen: set[tuple[str, str, str]] = set()
         current_commit = ""
         current_file = "git-history"
+        current_line = 0
 
         for raw_line in proc.stdout.splitlines():
             if raw_line.startswith("COMMIT:"):
@@ -163,8 +178,17 @@ class SecretsEngine(Engine):
             if raw_line.startswith("+++ b/"):
                 current_file = raw_line.removeprefix("+++ b/").strip()
                 continue
+            if hunk_match := hunk_re.match(raw_line):
+                current_line = int(hunk_match.group(1))
+                continue
+            if raw_line.startswith(" "):
+                current_line += 1
+                continue
             if not raw_line.startswith("+") or raw_line.startswith("+++"):
                 continue
+
+            line_num = current_line
+            current_line += 1
 
             rel_path = Path(current_file)
             if any(part in IGNORED_DIRS for part in rel_path.parts) or rel_path.suffix.lower() in IGNORED_EXTENSIONS:
@@ -182,7 +206,7 @@ class SecretsEngine(Engine):
                     title=f"{f.title} (en historial de Git)",
                     severity=Severity.CRITICAL,
                     file_path=current_file,
-                    line=None,
+                    line=line_num or None,
                     snippet=f.snippet,
                     description=(
                         f"Secreto detectado en el commit {current_commit}. Aunque haya sido borrado "
