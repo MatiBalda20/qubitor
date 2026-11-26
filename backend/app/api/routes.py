@@ -114,7 +114,7 @@ def start_scan(
     # Cada escaneo ocupa el worker hasta 5 minutos: una organización no puede
     # acaparar la cola y dejar esperando a las demás.
     limit = max_active_scans_per_org()
-    if _active_scans_of(db, user) >= limit:
+    if _active_scans_of(db, user.organization_id) >= limit:
         db.commit()  # guarda el escaneo trabado que se marcó como fallido
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
@@ -238,14 +238,17 @@ def _get_scan(db: Session, scan_id: uuid.UUID, user: CurrentUser) -> Scan:
     return scan
 
 
-def _active_scans_of(db: Session, user: CurrentUser) -> int:
-    """Escaneos en cola o en curso de la organización, sin contar los trabados."""
+def _active_scans_of(db: Session, organization_id: uuid.UUID) -> int:
+    """Escaneos en cola o en curso de la organización, sin contar los trabados.
+
+    Lo usan el escaneo manual y el webhook de push (integrations/github/webhooks.py).
+    """
     cutoff = datetime.now(timezone.utc) - STALE_AFTER
     return db.scalar(
         select(func.count(Scan.id))
         .join(Repository)
         .where(
-            Repository.organization_id == user.organization_id,
+            Repository.organization_id == organization_id,
             Scan.status.in_(_ACTIVE),
             func.coalesce(Scan.started_at, Scan.created_at) > cutoff,
         )

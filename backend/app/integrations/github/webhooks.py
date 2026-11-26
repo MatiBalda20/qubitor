@@ -17,13 +17,15 @@ import logging
 import os
 import re
 import time
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.routes import _ACTIVE, _is_stale
+from app.api.routes import _ACTIVE, _active_scans_of, _is_stale
+from app.config import max_active_scans_per_org
 from app.models.database import get_db
 from app.models.models import Repository, Scan, ScanStatus
 from app.worker.clone import is_github_url
@@ -107,14 +109,20 @@ def github_push(request: Request, body: bytes = Depends(raw_body), db: Session =
     if not first_time:
         return {"duplicate": True, "scans": [], "skipped": 0}
 
-    repos = db.scalars(select(Repository).where(func.lower(Repository.url) == url.lower())).all()
-    started, skipped = [], 0
-    for repo in repos:
-        scan_id = _start_scan(db, repo)
-        if scan_id is None:
-            skipped += 1
-        else:
-            started.append(scan_id)
+    try:
+        repos = db.scalars(select(Repository).where(func.lower(Repository.url) == url.lower())).all()
+        started, skipped = [], 0
+        for repo in repos:
+            scan_id = _start_scan(db, repo)
+            if scan_id is None:
+                skipped += 1
+            else:
+                started.append(scan_id)
+    except Exception:
+        # Sin esto, la entrega quedaba marcada aunque no se lanzó nada y un
+        # reenvío desde GitHub se descartaba como duplicado.
+        _forget_delivery(event.delivery_id)
+        raise
     logger.info(
         "Webhook %s: push a %s, %d escaneos lanzados, %d ya en curso",
         event.delivery_id, url, len(started), skipped,
@@ -122,8 +130,20 @@ def github_push(request: Request, body: bytes = Depends(raw_body), db: Session =
     return {"duplicate": False, "scans": started, "skipped": skipped}
 
 
+def _forget_delivery(delivery_id: str) -> None:
+    try:
+        get_connection().delete(f"qubitor:webhook:delivery:{delivery_id}")
+    except Exception:
+        logger.exception("Webhook: no se pudo liberar la entrega %s", delivery_id)
+
+
 def _start_scan(db: Session, repo: Repository) -> str | None:
-    """Encola un escaneo del repo, salvo que ya haya uno activo (mismo criterio que la API)."""
+    """Encola un escaneo del repo con los mismos límites que el escaneo manual.
+
+    No lanza nada si el repo ya tiene un escaneo activo o si su organización
+    llegó al límite de escaneos simultáneos: un push (o un evento firmado con
+    el secreto compartido, ver QUB-07) no puede saltearse ese límite.
+    """
     active = db.scalar(
         select(Scan).where(Scan.repository_id == repo.id, Scan.status.in_(_ACTIVE)).order_by(Scan.created_at.desc())
     )
@@ -132,6 +152,12 @@ def _start_scan(db: Session, repo: Repository) -> str | None:
     if active is not None:
         active.status = ScanStatus.FAILED
         active.error = "El escaneo no terminó a tiempo: el worker se detuvo o superó el tiempo límite"
+        active.finished_at = datetime.now(timezone.utc)
+
+    if _active_scans_of(db, repo.organization_id) >= max_active_scans_per_org():
+        db.commit()  # guarda el escaneo trabado que se marcó como fallido
+        logger.info("Webhook: la organización de %s llegó al límite de escaneos simultáneos", repo.url)
+        return None
 
     scan = Scan(repository_id=repo.id, status=ScanStatus.QUEUED)
     db.add(scan)
