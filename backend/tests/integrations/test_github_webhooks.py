@@ -243,3 +243,67 @@ def test_si_la_cola_no_responde_el_escaneo_queda_fallido(entorno, db, monkeypatc
     assert respuesta.json()["scans"] == []
     with db() as session:
         assert session.query(Scan).one().status == ScanStatus.FAILED
+
+
+@necesita_postgres
+def test_el_webhook_respeta_el_limite_de_escaneos_por_organizacion(entorno, db, monkeypatch):
+    """QUB-07: con el secreto compartido se podían lanzar escaneos sin el límite por organización."""
+    from app.models.models import Organization, Repository
+
+    client, encolados = entorno
+    monkeypatch.setenv("MAX_ACTIVE_SCANS_PER_ORG", "1")
+    with db() as session, session.begin():
+        org = Organization(name="org_1", clerk_org_id="org_1")
+        session.add_all([
+            org,
+            Repository(organization=org, full_name="acme/uno", url="https://github.com/acme/uno"),
+            Repository(organization=org, full_name="acme/dos", url="https://github.com/acme/dos"),
+        ])
+
+    primera = _push(client, _evento(delivery_id="entrega-1", repository_url="https://github.com/acme/uno"))
+    segunda = _push(client, _evento(delivery_id="entrega-2", repository_url="https://github.com/acme/dos"))
+
+    assert len(primera.json()["scans"]) == 1
+    assert segunda.json() == {"duplicate": False, "scans": [], "skipped": 1}
+    assert len(encolados) == 1
+
+
+@necesita_postgres
+def test_un_escaneo_trabado_se_cierra_con_fecha_de_fin(entorno, db):
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.models import Scan, ScanStatus
+
+    client, encolados = entorno
+    repo_id = _repo(db)
+    with db() as session, session.begin():
+        session.add(Scan(repository_id=repo_id, status=ScanStatus.RUNNING,
+                         created_at=datetime.now(timezone.utc) - timedelta(hours=2),
+                         started_at=datetime.now(timezone.utc) - timedelta(hours=2)))
+
+    respuesta = _push(client)
+
+    assert len(respuesta.json()["scans"]) == 1
+    with db() as session:
+        trabado = session.query(Scan).filter(Scan.status == ScanStatus.FAILED).one()
+        assert trabado.finished_at is not None
+
+
+@necesita_postgres
+def test_si_falla_la_base_la_entrega_se_puede_reenviar(entorno, db, monkeypatch):
+    client, encolados = entorno
+    _repo(db)
+    original = webhooks._start_scan
+
+    def base_caida(*args):
+        raise RuntimeError("la base no responde")
+
+    monkeypatch.setattr(webhooks, "_start_scan", base_caida)
+    with pytest.raises(RuntimeError):
+        _push(client)
+
+    monkeypatch.setattr(webhooks, "_start_scan", original)
+    reenvio = _push(client)
+
+    assert reenvio.json()["duplicate"] is False
+    assert len(reenvio.json()["scans"]) == 1

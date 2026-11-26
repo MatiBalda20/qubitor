@@ -16,7 +16,12 @@
   ],
   "vars": {
     // URL pública de la API de Qubitor en Render, sin barra final.
-    "QUBITOR_API_URL": "https://qubitor-api.onrender.com"
+    "QUBITOR_API_URL": "https://qubitor-api.onrender.com",
+    // Repos ("owner/repo", separados por comas) que pueden disparar escaneos. El secreto
+    // de GitHub es uno solo para todos los webhooks (QUB-07): esta lista acota a quién
+    // afecta si se filtra. Vacía, el Worker no acepta ningún push. Agregar un repo de un
+    // cliente es una decisión del equipo, por Pull Request.
+    "ALLOWED_REPOSITORIES": "ValentinaPertile/qubitor-demo-vulnerable"
   }
   // Secretos (nunca en este archivo): `npx wrangler secret put GITHUB_WEBHOOK_SECRET`
   // y `npx wrangler secret put INTERNAL_WEBHOOK_SECRET`. En local, en .dev.vars.

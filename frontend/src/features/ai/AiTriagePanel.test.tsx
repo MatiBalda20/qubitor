@@ -61,11 +61,11 @@ describe('AiTriagePanel', () => {
     expect(screen.getByText('según la IA')).toBeInTheDocument()
   })
 
-  it('marca los posibles falsos positivos y explica que no cuentan', () => {
+  it('marca los posibles falsos positivos como sugerencia que sigue contando', () => {
     render(<AiTriagePanel finding={finding({ triage: { ...finding().triage!, is_false_positive: true } })} />)
 
     expect(screen.getByText('Posible falso positivo')).toBeInTheDocument()
-    expect(screen.getByText(/No cuenta para el Risk Score/)).toBeInTheDocument()
+    expect(screen.getByText(/sigue contando para el Risk Score/)).toBeInTheDocument()
   })
 
   it('sin triage no muestra nada', () => {

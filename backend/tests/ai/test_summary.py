@@ -76,7 +76,7 @@ def test_a_gemini_solo_le_llegan_datos_agregados_sin_codigo():
     assert datos["top_findings"][0]["severity"] == "critical"
 
 
-def test_usa_la_severidad_ajustada_y_descarta_falsos_positivos():
+def test_usa_la_severidad_ajustada_y_no_descarta_falsos_positivos_sugeridos():
     triage = TriageOutcome(results={
         "q": TriageResult(True, Severity.HIGH, "e", "r"),
         "d": TriageResult(False, Severity.CRITICAL, "e", "r"),
@@ -86,7 +86,7 @@ def test_usa_la_severidad_ajustada_y_descarta_falsos_positivos():
     build_summary(HALLAZGOS, 80.0, "B", triage, modelo)
 
     datos = json.loads(modelo.prompts[0].split("\n", 1)[1])
-    assert datos["by_severity"] == {"critical": 2}
+    assert datos["by_severity"] == {"critical": 2, "high": 1}
 
 
 def test_si_gemini_falla_usa_el_resumen_heuristico():

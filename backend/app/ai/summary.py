@@ -158,12 +158,13 @@ def heuristic_summary(facts: dict) -> dict:
 
 
 def _facts(findings: dict[str, Finding], risk_score: float, grade: str, triage: TriageOutcome) -> dict:
-    """Datos agregados del escaneo: sin código, con la severidad ajustada por la IA."""
+    """Datos agregados del escaneo: sin código, con la severidad ajustada por la IA.
+
+    Los falsos positivos sugeridos por la IA se incluyen, igual que en el Risk Score.
+    """
     open_items = []
     for fp, finding in findings.items():
         result = triage.results.get(fp)
-        if result is not None and result.is_false_positive:
-            continue
         severity = result.adjusted_severity if result is not None else Severity(finding.severity)
         if severity == Severity.INFO:
             continue

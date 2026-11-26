@@ -11,8 +11,13 @@ quedan con la severidad del motor.
 
 El fragmento es código ajeno y puede traer instrucciones dirigidas al modelo
 (prompt injection). Por eso, además de indicarle que lo trate como datos, la
-respuesta se valida y tiene límites: un secreto expuesto nunca se marca como
-falso positivo ni baja de severidad, y ningún hallazgo baja más de dos niveles.
+respuesta se valida contra una política fija (ver `_guard`):
+
+- La marca de falso positivo de la IA es solo una **sugerencia**: nunca saca un
+  hallazgo del Risk Score. Lo confirma una persona marcándolo en la app.
+- No se sugiere falso positivo para secretos, dependencias (SCA) ni críticos.
+- La severidad cambia como máximo un nivel y nunca baja a `info`. Los secretos
+  no bajan y las dependencias conservan la severidad del CVSS de OSV.
 """
 
 import hashlib
@@ -34,7 +39,8 @@ BATCH_SIZE = 15
 MAX_FINDINGS_PER_SCAN = 60
 BUDGET_SECONDS = 90
 MAX_CONSECUTIVE_ERRORS = 2
-MAX_DOWNGRADE_LEVELS = 2
+# La IA puede mover la severidad como máximo un nivel, hacia arriba o hacia abajo.
+MAX_SEVERITY_CHANGE_LEVELS = 1
 MAX_TEXT_CHARS = 1500
 
 # De mayor a menor gravedad.
@@ -242,17 +248,31 @@ def parse_results(payload: dict, batch: list[tuple[str, Finding]]) -> dict[str, 
 
 
 def _guard(finding: Finding, result: TriageResult) -> TriageResult:
-    """Límites a lo que puede cambiar la IA, también ante prompt injection."""
+    """Política fija sobre lo que puede cambiar la IA, también ante prompt injection.
+
+    - Secretos: nunca falso positivo; la severidad puede subir pero no bajar.
+    - Dependencias (SCA): la severidad sale del CVSS de OSV y no la cambia la IA;
+      nunca falso positivo (un CVE no se descarta mirando un fragmento de código).
+    - Críticos: nunca falso positivo.
+    - Resto: un nivel como máximo hacia arriba o hacia abajo, y nunca hasta `info`,
+      que no penaliza.
+
+    `is_false_positive` queda como sugerencia: el Risk Score no la usa.
+    """
     original = Severity(finding.severity)
     severity = result.adjusted_severity
     is_false_positive = result.is_false_positive
-    if finding.engine == "secrets":
-        # Un secreto expuesto se rota igual: la IA no puede descartarlo ni bajarlo.
+
+    if finding.engine in ("secrets", "sca") or original == Severity.CRITICAL:
         is_false_positive = False
-        if _rank(severity) > _rank(original):
-            severity = original
-    elif _rank(severity) - _rank(original) > MAX_DOWNGRADE_LEVELS:
-        severity = SEVERITY_ORDER[_rank(original) + MAX_DOWNGRADE_LEVELS]
+
+    if finding.engine == "sca":
+        severity = original
+    else:
+        lowest = _rank(original) if finding.engine == "secrets" else _rank(original) + MAX_SEVERITY_CHANGE_LEVELS
+        lowest = min(lowest, _rank(Severity.LOW))
+        highest = max(_rank(original) - MAX_SEVERITY_CHANGE_LEVELS, 0)
+        severity = SEVERITY_ORDER[min(max(_rank(severity), highest), max(lowest, _rank(original)))]
     return TriageResult(is_false_positive, severity, result.explanation, result.remediation)
 
 

@@ -174,3 +174,40 @@ def test_reglas_reales_detectan_las_fallas_de_javascript(tmp_path):
         "sast.semgrep.new-function",
     }
     assert {h.file_path for h in hallazgos} == {"app.js"}
+
+
+
+# Aislamiento y supresión (QUB-05 y QUB-01)
+
+def test_semgrep_recibe_un_entorno_minimo_sin_secretos_del_worker(repo, monkeypatch):
+    for nombre in ("DATABASE_URL", "REDIS_URL", "GEMINI_API_KEY", "R2_SECRET_ACCESS_KEY",
+                   "CF_API_TOKEN", "CLERK_SECRET_KEY", "INTERNAL_WEBHOOK_SECRET"):
+        monkeypatch.setenv(nombre, "valor-secreto")
+    llamadas = []
+
+    def fake_run(command, **kwargs):
+        llamadas.append((command, kwargs))
+        return semgrep.subprocess.CompletedProcess(command, 0, stdout='{"results": []}', stderr="")
+
+    monkeypatch.setattr(semgrep.subprocess, "run", fake_run)
+    run_semgrep(str(repo))
+
+    command, kwargs = llamadas[0]
+    env = kwargs["env"]
+    assert "valor-secreto" not in env.values()
+    assert set(env) <= {"PATH", "HOME", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE",
+                        "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "LANG", "LC_ALL", "SEMGREP_SEND_METRICS"}
+    assert "--disable-nosem" in command
+    assert "--x-ignore-semgrepignore-files" in command
+
+
+@hay_semgrep
+def test_nosemgrep_y_semgrepignore_del_repo_no_ocultan_hallazgos(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://secreto")
+    (tmp_path / "a.js").write_text("function f(code) {\n  eval(code); // nosemgrep\n}\n")
+    (tmp_path / "b.js").write_text("function g(code) {\n  eval(code);\n}\n")
+    (tmp_path / ".semgrepignore").write_text("b.js\n")
+
+    hallazgos = semgrep_to_findings(run_semgrep(str(tmp_path)), str(tmp_path))
+
+    assert {h.file_path for h in hallazgos if h.rule_id == "sast.semgrep.eval"} == {"a.js", "b.js"}

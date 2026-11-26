@@ -1,15 +1,23 @@
 import math
-import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 from app.engines.base import Engine, Finding, Severity
+from app.engines.crypto.files import read_text
+from app.worker.clone import MAX_REPO_BYTES, _size_of, git_env
 
-_GIT_ENV_KEYS = ("PATH", "HOME", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE")
-
-def _git_env() -> dict[str, str]:
-    return {k: os.environ[k] for k in _GIT_ENV_KEYS if k in os.environ}
+# Límites del análisis del historial de Git: el repo es ajeno y puede estar
+# armado para agotar la memoria o el tiempo del worker (QUB-03).
+HISTORY_MAX_COMMITS = 20
+HISTORY_FETCH_TIMEOUT_SECONDS = 15
+HISTORY_LOG_TIMEOUT_SECONDS = 15
+HISTORY_MAX_OUTPUT_BYTES = 8 * 1024 * 1024
+HISTORY_MAX_LINE_BYTES = 4096
+# Git trata como binarios (no calcula su diff) los archivos más grandes que esto.
+HISTORY_BIG_FILE_THRESHOLD = "1m"
+_POLL_SECONDS = 0.2
 
 IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build"}
 IGNORED_EXTENSIONS = {".lock", ".bin", ".exe", ".dll", ".so", ".pdf", ".png", ".jpg"}
@@ -48,9 +56,8 @@ class SecretsEngine(Engine):
         for file_path in repo.rglob("*"):
             if self._should_ignore(file_path, repo):
                 continue
-            try:
-                content = file_path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            content = read_text(file_path)
+            if content is None:
                 continue
             relative_path = file_path.relative_to(repo).as_posix()
             findings.extend(self._scan_content(content, relative_path))
@@ -115,104 +122,195 @@ class SecretsEngine(Engine):
     def _scan_git_history(
         self,
         repo: Path,
-        max_commits: int = 20,
+        max_commits: int = HISTORY_MAX_COMMITS,
         head_keys: set[tuple[str, str, str]] | None = None,
     ) -> list[Finding]:
-        """Recorre los últimos commits para detectar secretos borrados pero aún en la historia."""
+        """Recorre los últimos commits para detectar secretos borrados pero aún en la historia.
+
+        Si el historial no se puede analizar entero (supera los límites o git
+        falla), se devuelve lo encontrado más un hallazgo `info` que lo avisa:
+        "no encontré nada" y "no pude mirar" no pueden verse igual.
+        """
         if not (repo / ".git").exists():
             return []
 
-        def _commit_count() -> int:
-            res = subprocess.run(
-                ["git", "-C", str(repo), "rev-list", "--count", "HEAD"],
-                env=_git_env(),
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            return int(res.stdout.strip() or "0") if res.returncode == 0 else 0
-
         try:
-            count = _commit_count()
+            count = _commit_count(repo)
             if count <= 1:
-                subprocess.run(
-                    ["git", "-C", str(repo), "fetch", f"--deepen={max_commits}"],
-                    env=_git_env(),
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                )
-                count = _commit_count()
+                problem = _deepen(repo, max_commits)
+                if problem:
+                    return [self._history_incomplete(problem)]
+                count = _commit_count(repo)
             if count <= 1:
-                return []
-        except (OSError, ValueError, subprocess.TimeoutExpired):
-            return []
+                return []  # el repo tiene un solo commit: no hay historial que mirar
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return [self._history_incomplete("No se pudo consultar el historial de Git")]
 
-        try:
-            proc = subprocess.run(
-                ["git", "-C", str(repo), "log", f"-n{max_commits}", "-p", "--no-color", "--pretty=format:COMMIT:%H"],
-                env=_git_env(),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=15,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return []
-
-        if proc.returncode != 0 or not proc.stdout:
-            return []
-
-        hunk_re = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
         findings: list[Finding] = []
+        try:
+            problem = self._scan_log(repo, max_commits, head_keys or set(), findings)
+        except (OSError, subprocess.SubprocessError):
+            problem = "No se pudo leer el historial de Git"
+        if problem:
+            findings.append(self._history_incomplete(problem))
+        return findings
+
+    def _scan_log(
+        self, repo: Path, max_commits: int, head_keys: set[tuple[str, str, str]], findings: list[Finding]
+    ) -> str | None:
+        """Lee `git log -p` en streaming con tope de bytes, de largo de línea y de tiempo.
+
+        Devuelve None si leyó todo, o el motivo por el que cortó.
+        """
+        command = [
+            "git", "-C", str(repo), "-c", f"core.bigFileThreshold={HISTORY_BIG_FILE_THRESHOLD}",
+            "log", f"-n{max_commits}", "-p", "--no-color", "--no-ext-diff", "--no-textconv",
+            "--pretty=format:COMMIT:%H",
+        ]
+        process = subprocess.Popen(command, env=git_env(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + HISTORY_LOG_TIMEOUT_SECONDS
+        problem = None
+        total = 0
+        hunk_re = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
         seen: set[tuple[str, str, str]] = set()
         current_commit = ""
         current_file = "git-history"
         current_line = 0
-
-        for raw_line in proc.stdout.splitlines():
-            if raw_line.startswith("COMMIT:"):
-                current_commit = raw_line.removeprefix("COMMIT:").strip()[:12]
-                continue
-            if raw_line.startswith("+++ b/"):
-                current_file = raw_line.removeprefix("+++ b/").strip()
-                continue
-            if hunk_match := hunk_re.match(raw_line):
-                current_line = int(hunk_match.group(1))
-                continue
-            if raw_line.startswith(" "):
-                current_line += 1
-                continue
-            if not raw_line.startswith("+") or raw_line.startswith("+++"):
-                continue
-
-            line_num = current_line
-            current_line += 1
-
-            rel_path = Path(current_file)
-            if any(part in IGNORED_DIRS for part in rel_path.parts) or rel_path.suffix.lower() in IGNORED_EXTENSIONS:
-                continue
-
-            line = raw_line[1:]
-            for f in self._scan_content(line, current_file):
-                key = (f.rule_id, current_file, f.snippet)
-                if key in seen or (head_keys and key in head_keys):
+        try:
+            assert process.stdout is not None
+            while True:
+                if time.monotonic() > deadline:
+                    problem = f"El análisis del historial superó {HISTORY_LOG_TIMEOUT_SECONDS} s"
+                    break
+                chunk = process.stdout.readline(HISTORY_MAX_LINE_BYTES)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > HISTORY_MAX_OUTPUT_BYTES:
+                    problem = f"El historial supera {HISTORY_MAX_OUTPUT_BYTES // (1024 * 1024)} MB de cambios"
+                    break
+                if not chunk.endswith(b"\n"):
+                    # Línea más larga que el tope (código minificado o datos): se saltea
+                    # el resto sin cargarlo en memoria, contándolo en el total.
+                    while True:
+                        rest = process.stdout.readline(HISTORY_MAX_LINE_BYTES)
+                        total += len(rest)
+                        if not rest or rest.endswith(b"\n") or total > HISTORY_MAX_OUTPUT_BYTES:
+                            break
+                    if chunk.startswith(b"+") and not chunk.startswith(b"+++"):
+                        current_line += 1
                     continue
-                seen.add(key)
-                findings.append(Finding(
-                    engine=self.name,
-                    rule_id=f"{f.rule_id}.history",
-                    title=f"{f.title} (en historial de Git)",
-                    severity=Severity.CRITICAL,
-                    file_path=current_file,
-                    line=line_num or None,
-                    snippet=f.snippet,
-                    description=(
-                        f"Secreto detectado en el commit {current_commit}. Aunque haya sido borrado "
-                        "en un commit posterior, sigue expuesto en el historial de Git. Rotá la credencial inmediatamente."
-                    ),
-                    cwe="CWE-798",
-                    metadata={**f.metadata, "in_git_history": True, "commit": current_commit},
-                ))
-        return findings
+                raw_line = chunk.decode("utf-8", errors="replace").rstrip("\r\n")
+
+                if raw_line.startswith("COMMIT:"):
+                    current_commit = raw_line.removeprefix("COMMIT:").strip()[:12]
+                    continue
+                if raw_line.startswith("+++ b/"):
+                    current_file = raw_line.removeprefix("+++ b/").strip()
+                    continue
+                if hunk_match := hunk_re.match(raw_line):
+                    current_line = int(hunk_match.group(1))
+                    continue
+                if raw_line.startswith(" "):
+                    current_line += 1
+                    continue
+                if not raw_line.startswith("+") or raw_line.startswith("+++"):
+                    continue
+
+                line_num = current_line
+                current_line += 1
+
+                rel_path = Path(current_file)
+                if any(part in IGNORED_DIRS for part in rel_path.parts) or rel_path.suffix.lower() in IGNORED_EXTENSIONS:
+                    continue
+
+                for f in self._scan_content(raw_line[1:], current_file):
+                    key = (f.rule_id, current_file, f.snippet)
+                    if key in seen or key in head_keys:
+                        continue
+                    seen.add(key)
+                    findings.append(self._history_finding(f, current_file, line_num, current_commit))
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+        if problem is None and process.returncode != 0:
+            problem = "git log terminó con error"
+        return problem
+
+    def _history_finding(self, f: Finding, file_path: str, line: int, commit: str) -> Finding:
+        return Finding(
+            engine=self.name,
+            rule_id=f"{f.rule_id}.history",
+            title=f"{f.title} (en historial de Git)",
+            severity=Severity.CRITICAL,
+            file_path=file_path,
+            line=line or None,
+            snippet=f.snippet,
+            description=(
+                f"Secreto detectado en el commit {commit}. Aunque haya sido borrado "
+                "en un commit posterior, sigue expuesto en el historial de Git. Rotá la credencial inmediatamente."
+            ),
+            cwe="CWE-798",
+            metadata={**f.metadata, "in_git_history": True, "commit": commit},
+        )
+
+    def _history_incomplete(self, reason: str) -> Finding:
+        """Aviso visible de que el historial no se analizó entero (no penaliza el score)."""
+        return Finding(
+            engine=self.name,
+            rule_id="secrets.history.incomplete",
+            title="El historial de Git no se pudo analizar completo",
+            severity=Severity.INFO,
+            file_path=".git",
+            line=None,
+            snippet="",
+            description=(
+                f"{reason}. Puede haber secretos en commits anteriores que no se revisaron: "
+                "el resultado del historial no es un escaneo limpio."
+            ),
+            metadata={"in_git_history": True, "reason": reason},
+        )
+
+
+def _commit_count(repo: Path) -> int:
+    res = subprocess.run(
+        ["git", "-C", str(repo), "rev-list", "--count", "HEAD"],
+        env=git_env(),
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    return int(res.stdout.strip() or "0") if res.returncode == 0 else 0
+
+
+def _deepen(repo: Path, max_commits: int) -> str | None:
+    """Trae los commits anteriores de un clon superficial sin pasar el límite del clon.
+
+    El clon se mide durante `git clone`, pero `fetch --deepen` puede bajar mucho
+    más (QUB-03): se mide igual y se corta si el repo supera MAX_REPO_BYTES.
+    Devuelve None si pudo, o el motivo por el que no.
+    """
+    process = subprocess.Popen(
+        ["git", "-C", str(repo), "fetch", "--no-tags", "--no-recurse-submodules", f"--deepen={max_commits}"],
+        env=git_env(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    deadline = time.monotonic() + HISTORY_FETCH_TIMEOUT_SECONDS
+    try:
+        while process.poll() is None:
+            if time.monotonic() > deadline:
+                return f"Traer el historial superó {HISTORY_FETCH_TIMEOUT_SECONDS} s"
+            if _size_of(str(repo)) > MAX_REPO_BYTES:
+                return "El historial supera el límite de 50 MB del repo"
+            time.sleep(_POLL_SECONDS)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+    if process.returncode != 0:
+        return "No se pudo traer el historial de Git"
+    if _size_of(str(repo)) > MAX_REPO_BYTES:
+        return "El historial supera el límite de 50 MB del repo"
+    return None

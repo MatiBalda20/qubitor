@@ -12,6 +12,7 @@ solo los lee del token en cada request:
 - member: ver, lanzar escaneos y marcar hallazgos.
 """
 
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ from sqlalchemy.orm import Session
 from app.config import cors_origins
 from app.models.database import get_db
 from app.models.models import Membership, MemberRole, Organization, User
+
+logger = logging.getLogger(__name__)
 
 # Margen para diferencias de reloj entre Clerk y el servidor.
 LEEWAY_SECONDS = 5
@@ -56,8 +59,17 @@ def clerk_issuer() -> str | None:
 
 
 def auth_disabled() -> bool:
-    """Solo para desarrollo local con el frontend en modo demo (sin Clerk)."""
-    return os.getenv("AUTH_DISABLED", "").lower() == "true"
+    """Solo para desarrollo local con el frontend en modo demo (sin Clerk).
+
+    En Render (que define RENDER) se ignora: con AUTH_DISABLED=true cualquier
+    pedido sin token entraría como admin de la organización demo (QUB-13).
+    """
+    if os.getenv("AUTH_DISABLED", "").lower() != "true":
+        return False
+    if os.getenv("RENDER"):
+        logger.error("AUTH_DISABLED=true se ignora en Render: la autenticación sigue activa")
+        return False
+    return True
 
 
 @lru_cache

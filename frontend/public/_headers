@@ -1,0 +1,10 @@
+# Cabeceras de seguridad de Workers Static Assets (QUB-11). Vite copia este archivo a dist/.
+# No hay una Content-Security-Policy de scripts: Clerk carga scripts y frames propios y
+# una CSP mal armada rompería el login. frame-ancestors solo impide que otro sitio
+# embeba Qubitor en un iframe (clickjacking).
+/*
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()

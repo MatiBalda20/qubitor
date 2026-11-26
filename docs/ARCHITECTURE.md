@@ -12,7 +12,7 @@ Este documento describe la arquitectura técnica y la infraestructura cloud de Q
 | Checkpoint 1 | Versión final | Por qué |
 |---|---|---|
 | Una sola API que escanea en una tarea en segundo plano (`BackgroundTasks`) | API y **scan-worker** separados, comunicados por una **cola** (Upstash Redis + RQ) | Un escaneo tarda hasta minutos: en la API bloqueaba memoria y se perdía si Render reiniciaba el servicio. La cola da reintentos y una cola de errores. |
-| Los motores corren en el mismo proceso que la API | El worker corre en un **contenedor Docker aislado**, con usuario sin privilegios | Qubitor ejecuta herramientas sobre código ajeno que no es de confianza. |
+| Los motores corren en el mismo proceso que la API | El worker corre en un **contenedor Docker separado de la API**, con usuario sin privilegios | Qubitor ejecuta herramientas sobre código ajeno que no es de confianza. El contenedor no separa las credenciales del worker de los motores: ver «Seguridad». |
 | Todo se guarda en Postgres | Reportes (PDF, JSON) y CBOM en un **bucket S3-compatible** (Cloudflare R2); caché de OSV en **Cloudflare KV** | Los archivos no son datos relacionales, y la caché es clave-valor con vencimiento. |
 | Escaneo por webhook «a futuro» | **Cloudflare Worker** que recibe los webhooks de GitHub y dispara el escaneo en cada push | Recibir webhooks no requiere un servidor encendido todo el día. |
 | Un usuario pertenece a una organización y no hay roles | **Organizaciones con varios miembros** y roles admin / member tomados de Clerk | Pedido de la versión final del plan. |
@@ -28,7 +28,7 @@ Este documento describe la arquitectura técnica y la infraestructura cloud de Q
                                       ▼
   GitHub ── push ──► Worker de   ┌──────────────────┐        ┌────────────────────────┐
                      webhooks ──►│ Render: API      │ ─────► │ Supabase: Postgres     │
-                     (HMAC)      │ FastAPI          │        │ con Row Level Security │
+                     (HMAC)      │ FastAPI          │        │ (RLS: ver Seguridad)   │
                                  └────────┬─────────┘        └────────────────────────┘
                                           │ encola                        ▲
                                           ▼                               │
@@ -39,7 +39,7 @@ Este documento describe la arquitectura técnica y la infraestructura cloud de Q
                                           ▼                               │
                                  ┌──────────────────┐  guarda hallazgos   │
                                  │ Render: worker   │ ────────────────────┘
-                                 │ (Docker aislado) │
+                                 │ (Docker sin root)│
                                  └──┬────┬─────┬────┘
                                     │    │     │
                      Gemini API ◄───┘    │     └───► Cloudflare R2: reportes y CBOM
@@ -72,7 +72,7 @@ La materia presenta los servicios de AWS; el proyecto usa sus equivalentes con c
 | API | Render (Web Service, Python) | ECS / App Runner | A | Despliegue continuo desde GitHub y variables de entorno por servicio. |
 | Cola de escaneos | Upstash Redis + RQ | SQS | A | Desacopla la API del worker, con reintentos (2), timeout por trabajo (5 min) y cola de errores (se conserva 7 días). |
 | Scan-worker | Render (servicio Docker) | ECS / Fargate | A y C | Imagen con Bandit, Semgrep y git; corre con un usuario sin privilegios porque analiza código que no es de confianza. |
-| Base de datos | Supabase (Postgres) | RDS | A | Postgres administrado con Row Level Security y backups automáticos. |
+| Base de datos | Supabase (Postgres) | RDS | A | Postgres administrado con backups automáticos. RLS bloquea la Data API de Supabase, no a la API de Qubitor (ver «Seguridad»). |
 | Reportes y CBOM | Cloudflare R2 (S3-compatible) | S3 | D | Almacenamiento de objetos; se descargan con URLs firmadas que vencen en 10 minutos. Sin costo de salida de datos. |
 | Caché de OSV | Cloudflare KV (clave-valor) | DynamoDB | D | Guarda la respuesta de OSV por `ecosistema|paquete|versión` con vencimiento de 24 h, para no repetir consultas. |
 | Webhook de GitHub | Cloudflare Worker | Lambda + API Gateway | E | Verifica la firma de GitHub y avisa a la API; corre solo cuando llega un push. |
@@ -172,8 +172,10 @@ Las migraciones se manejan con Alembic (`backend/alembic`).
 ## 7. Seguridad
 
 - **Autenticación y roles:** Clerk emite el JWT y la API lo valida con las claves públicas de Clerk (JWKS). El rol sale del token: un admin conecta repositorios; un member ve, escanea y marca hallazgos. Si el token trae organización pero no rol, se lo trata como member.
-- **Aislamiento entre organizaciones:** cada consulta filtra por la organización del token, y Row Level Security está activado en todas las tablas de Supabase.
-- **Webhook:** el Worker verifica la firma HMAC de GitHub y reenvía el evento a la API con su propia firma HMAC con timestamp (`INTERNAL_WEBHOOK_SECRET`). El Worker no tiene acceso a Redis ni a la base.
+- **Aislamiento entre organizaciones:** lo hace la aplicación: cada consulta filtra por la organización del token (probado con tests de IDOR en la CI). Row Level Security está activado en todas las tablas, pero **no protege a la API**: la API se conecta como dueña de las tablas (que saltea RLS) y no define `app.current_org_id`. RLS solo bloquea el acceso por la Data API de Supabase (`anon` y `authenticated`). Pendiente: un rol de la API que no sea dueño y `SET LOCAL app.current_org_id` por transacción.
+- **Contenedor de escaneo:** corre como usuario sin privilegios y el código de la app es de solo lectura. Bandit, Semgrep y git reciben un entorno mínimo, sin `DATABASE_URL`, `REDIS_URL`, `GEMINI_API_KEY` ni las claves del bucket. Pero los motores corren en el mismo proceso que el worker, que sí tiene esas credenciales: una falla explotable en una herramienta o librería de parseo daría acceso a ellas. No es un sandbox.
+- **Webhook:** el Worker verifica la firma HMAC de GitHub y reenvía el evento a la API con su propia firma HMAC con timestamp (`INTERNAL_WEBHOOK_SECRET`). El Worker no tiene acceso a Redis ni a la base. El secreto de GitHub es **uno solo para todos los webhooks**: quien lo conozca puede firmar un push de cualquier repo. Por eso el Worker solo acepta los repos de `ALLOWED_REPOSITORIES` y la API aplica el límite de escaneos por organización. No es apto para varios clientes hasta tener un secreto por repo u organización (o una GitHub App).
+- **IA:** la marca de falso positivo de Gemini es una sugerencia y no saca el hallazgo del Risk Score; la severidad cambia como máximo un nivel; secretos, dependencias y críticos nunca se sugieren como falso positivo.
 - **Código ajeno:** el worker corre en Docker con un usuario sin privilegios, clona con límite de tamaño y de tiempo, no sigue enlaces simbólicos fuera del repo y borra el clon al terminar.
 - **Secretos encontrados:** se enmascaran antes de guardarse y antes de enviarse a la IA. A Gemini nunca llega el repo completo.
 - **Reportes:** el bucket es privado; solo se descarga con URLs firmadas que vencen a los 10 minutos.
@@ -229,7 +231,7 @@ El keep-alive no pingea entre las 2 y las 11 UTC (de madrugada en Argentina), pa
 
 ### SQL y NoSQL: qué va en cada uno
 
-- **Postgres (SQL)** para los datos del negocio. Escaneos, hallazgos y repositorios tienen relaciones (organización → repo → escaneo → hallazgo) y se consultan con filtros, uniones y agregados: hallazgos por severidad, evolución del Risk Score, aislamiento por organización con RLS. Necesitan integridad referencial y transacciones.
+- **Postgres (SQL)** para los datos del negocio. Escaneos, hallazgos y repositorios tienen relaciones (organización → repo → escaneo → hallazgo) y se consultan con filtros, uniones y agregados: hallazgos por severidad, evolución del Risk Score, aislamiento por organización (en las consultas de la API; RLS cubre la Data API de Supabase). Necesitan integridad referencial y transacciones.
 - **KV (NoSQL clave-valor)** para la caché de OSV. Se accede siempre por una clave exacta (`ecosistema|paquete|versión`), no hay relaciones ni consultas, el dato puede perderse sin daño (se vuelve a pedir a OSV) y necesita vencimiento automático. KV lo resuelve con TTL nativo y lecturas rápidas desde el borde de la red. En Postgres habría que armar la expiración a mano y se mezclaría información descartable con la del negocio.
 
 ### Por qué una cola y no una tarea en segundo plano

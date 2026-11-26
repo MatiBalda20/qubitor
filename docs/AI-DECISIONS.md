@@ -539,6 +539,15 @@ Copiar el bloque de abajo, completar los campos y agregarlo al final de este arc
 - **Responsable:** Matías Balda
 - **PR:** #(pendiente)
 
+### [2026-11-26] Correcciones de la auditoría integral y Worker de webhooks listo para desplegar
+
+- **Problema abordado:** cerrar antes de la defensa los hallazgos P0/P1 de la auditoría integral del 26/11 (PDF sin URL, IA que podía ocultar hallazgos, historial de Git sin límite, entorno de Semgrep, supresiones desde el repo, archivos no UTF-8, alembic y cryptography, marcas de falso positivo que se perdían, CI incompleta, AUTH_DISABLED y /docs en Render, cabeceras del frontend, documentación) y dejar el Worker de webhooks listo para desplegar.
+- **Prompt / Herramienta utilizada:** Claude Code (Claude Opus 5.5), con el informe de auditoría como punto de partida y la instrucción de verificar cada hallazgo contra el código antes de corregirlo.
+- **Código / Arquitectura generada:** un commit por problema en la rama feature/auditoria-webhook-worker. Lo más relevante: política fija del triage (`triage._guard`: la IA solo sugiere falsos positivos, ±1 nivel de severidad, nunca en secretos/SCA/críticos); lectura en streaming y con topes del historial de Git con aviso `secrets.history.incomplete`; `crypto/files.decode_source` (UTF-8 o latin-1); `ALLOWED_REPOSITORIES` en el Worker y límite por organización en el webhook; separación de `src/index.ts` y `src/handler.ts` porque workerd rechazaba el módulo principal con exports que no son handlers; nuevos jobs de CI.
+- **Validación y Corrección Humana:** pendiente de revisión cruzada en el PR. Evidencia generada: 670 tests del backend con Postgres en Windows, los tests de los motores dentro de la imagen del worker (Semgrep real, 512 MB), 48 del frontend y 29 del Worker; reproducción del caso de historial de 150 MB (pico de 168 MB en lugar de 537 MB, con aviso); prueba local de punta a punta con wrangler dev, API, Redis, Postgres y el scan-worker en Docker. No se pudo verificar contra Cloudflare, GitHub ni Render (sin credenciales en el equipo): el despliegue queda documentado en infra/webhook-worker/README.md.
+- **Responsable:** Valentino Chiappini
+- **PR:** #(pendiente)
+
 ### [PLANTILLA — completar en próximas entradas]
 
 - **Problema abordado:**

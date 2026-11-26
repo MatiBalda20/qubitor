@@ -63,7 +63,7 @@ export function AiTriagePanel({ finding, showSeverityChange = true, className }:
 
       {triage.is_false_positive && (
         <p className="text-xs text-ink-2">
-          No cuenta para el Risk Score mientras la IA lo considere falso positivo. Si lo confirmás, marcalo como falso positivo.
+          Es solo una sugerencia: sigue contando para el Risk Score hasta que una persona lo marque como falso positivo.
         </p>
       )}
       <p className="text-xs text-ink-3">Generado por IA a partir de un fragmento del código: revisalo antes de aplicarlo.</p>

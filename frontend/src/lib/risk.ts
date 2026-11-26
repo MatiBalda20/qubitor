@@ -32,9 +32,12 @@ export function isInformational(finding: FindingRecord): boolean {
   return effectiveSeverity(finding) === 'info'
 }
 
-/** Solo penalizan los hallazgos abiertos, que no son falsos positivos ni info. */
+/**
+ * Solo penalizan los hallazgos abiertos que no son info. La sugerencia de falso
+ * positivo de la IA no los saca: lo tiene que confirmar una persona marcándolo.
+ */
 export function countsTowardScore(finding: FindingRecord): boolean {
-  return finding.status === 'open' && !finding.triage?.is_false_positive && !isInformational(finding)
+  return finding.status === 'open' && !isInformational(finding)
 }
 
 export function penaltyOf(findings: readonly FindingRecord[]): number {

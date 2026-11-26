@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 
 from app.engines.base import Finding, Severity
+from app.engines.crypto.files import read_text
 from app.engines.crypto.pqc import (
     _collect_imports, _qualified_name, _int_argument, _snippet as pqc_snippet, IGNORED_DIRS
 )
@@ -36,9 +37,8 @@ def scan_classic(repo_path: str) -> list[Finding]:
         if path.suffix not in PYTHON_SUFFIXES and path.suffix not in JS_SUFFIXES:
             continue
             
-        try:
-            content = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+        content = read_text(path)
+        if content is None:
             continue
             
         rel_path = path.relative_to(repo).as_posix()

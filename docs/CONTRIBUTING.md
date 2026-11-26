@@ -4,14 +4,27 @@ Guía de trabajo para el equipo (Balda, Pértile de la Vega, Wilt, Marini, Chiap
 
 ## 1. Flujo de ramas
 
-- `main` — rama protegida. Solo se llega vía Pull Request aprobado. Cada merge a `main` dispara el deploy automático (Render + Cloudflare Pages).
-- `develop` — rama de integración (staging opcional). Acumula features antes de promocionar a `main`.
-- `feature/<área>-<descripción-corta>` — una rama por tarea. Ejemplos:
+- `main` — **producción**. Solo se llega vía Pull Request aprobado desde `develop` (o un `hotfix/*`). Cada merge con la CI en verde se despliega en los servicios de producción de Render.
+- `develop` — **staging**. Rama de integración: acá se mergean las features. Cada merge con la CI en verde se despliega en los servicios `*-staging` de Render.
+- `feature/<área>-<descripción-corta>` — una rama por tarea, que sale de `develop`. Ejemplos:
   - `feature/api-scans-endpoint`
   - `feature/frontend-dashboard-findings`
   - `feature/infra-supabase-rls`
+- `hotfix/<descripción-corta>` — solo para un error urgente en producción. Sale de `main`.
 
-No se commitea directo a `main` ni a `develop` bajo ninguna circunstancia.
+No se commitea directo a `main` ni a `develop` bajo ninguna circunstancia, y **nunca se hace force push** a ninguna de las dos: son las ramas que se despliegan (ver [deploy.md](deploy.md)).
+
+### Cómo llega un cambio a Render
+
+Render está conectado directo a este repo y despliega cada rama solo cuando la CI pasó en verde para ese commit:
+
+```
+feature/x ──PR──▶ develop ──CI verde──▶ Render staging
+                     │
+                     └──PR──▶ main ──CI verde──▶ Render producción
+```
+
+Un merge está desplegado en unos minutos: lo que tarda la CI más el build de Render.
 
 ## 2. Conventional Commits
 
@@ -49,14 +62,33 @@ docs(ai-decisions): registrar decisión sobre índice de findings por severidad
 
 ## 3. Pull Requests
 
-1. Toda rama `feature/*` se mergea a `develop` (o `main` si no se usa staging) exclusivamente vía PR.
+1. Toda rama `feature/*` se mergea a `develop` exclusivamente vía PR. **Nunca un PR de `feature/*` directo a `main`.**
 2. **Cross-review obligatorio**: el autor del PR no puede aprobar su propio PR. Debe revisarlo al menos un integrante distinto.
 3. El PR debe describir:
    - Qué problema resuelve.
    - Cómo probarlo localmente.
    - Si involucró código generado por IA, referenciar la entrada correspondiente en `AI-DECISIONS.md`.
 4. El pipeline de CI (lint, type-check, tests, build) debe pasar en verde antes de mergear.
-5. Usar "Squash and merge" o "Merge commit" según se acuerde en el equipo, pero mantener el título del PR alineado a Conventional Commits.
+5. Mantener el título del PR alineado a Conventional Commits. Estrategia de merge según el PR:
+
+| PR | Botón de GitHub | Por qué |
+|---|---|---|
+| `feature/*` → `develop` | *Squash and merge* o *Create a merge commit* | Cualquiera de las dos. |
+| `develop` → `main` | **Create a merge commit** (nunca *Squash*) | Con *Squash*, `main` recibe un commit que `develop` no tiene: las ramas se separan y el próximo PR de `develop` a `main` arrastra cambios viejos o da conflictos. |
+| `hotfix/*` → `main` | *Create a merge commit* | Después, abrir enseguida un PR de `main` a `develop` para que staging no pierda el arreglo. |
+
+### Pasar de staging a producción
+
+1. Mergear las features en `develop` y esperar a que se desplieguen en staging.
+2. Probar en staging: `https://qubitor-api-staging.onrender.com/health` y un escaneo real con el frontend local apuntando a esa URL (`VITE_API_URL`). Staging en plan free se duerme tras 15 minutos sin uso: el primer pedido tarda ~1 minuto.
+3. Abrir un PR de `develop` a `main` titulado `chore(release): …` con la lista de lo que entra. Revisión cruzada como cualquier PR.
+4. Mergear con **Create a merge commit**. Cuando la CI de `main` termina en verde, Render lo despliega en producción.
+5. Comprobar `https://qubitor-api.onrender.com/health` y la app publicada.
+
+### Si algo no se despliega
+
+- **La CI de `main` o `develop` quedó en rojo después del merge:** Render no despliega ese commit y sigue con la versión anterior. Se arregla con otro PR.
+- **La CI está en verde pero Render no desplegó:** en Render, abrir el servicio y mirar *Events*. Se puede forzar con **Manual Deploy** → *Deploy latest commit*. Si sigue sin desplegar, avisar al responsable del Módulo B.
 
 ## 4. Gestión de tareas (Kanban)
 
@@ -73,6 +105,7 @@ El uso de asistentes de IA (Cursor, GitHub Copilot, Claude, etc.) está fomentad
 
 ## 6. Checklist antes de abrir un PR
 
+- [ ] La rama sale de `develop` y el PR apunta a `develop` (o `develop` → `main` para pasar a producción).
 - [ ] Commits siguen Conventional Commits.
 - [ ] Código con lint/type-check en verde localmente.
 - [ ] Tests agregados o actualizados si corresponde.

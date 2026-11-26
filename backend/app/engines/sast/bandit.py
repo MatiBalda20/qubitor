@@ -8,6 +8,10 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+# Configuración propia: el .bandit del repo analizado no se lee (QUB-01).
+CONFIG_FILE = Path(__file__).parent / "rules" / "bandit.ini"
 
 # Carpetas que no son código del usuario: dependencias, entornos y builds.
 IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build"}
@@ -37,9 +41,17 @@ def run_bandit(repo_path: str, timeout: int = TIMEOUT_SECONDS) -> dict:
     Se ejecuta con el repo como directorio de trabajo, así las rutas de la
     salida quedan relativas a la raíz del repo. Con `-I` Python no agrega el
     directorio actual a `sys.path`, evitando que el repo inyecte módulos.
+
+    El repo tampoco puede silenciar hallazgos (QUB-01): `--ini` usa la
+    configuración de Qubitor en lugar del `.bandit` del repo, e `--ignore-nosec`
+    reporta también las líneas marcadas con `# nosec`. Un falso positivo real se
+    marca en la app.
     """
     exclude = ",".join(f"*/{name}/*" for name in sorted(IGNORED_DIRS))
-    command = [sys.executable, "-I", "-m", "bandit", "-r", ".", "-f", "json", "-q", "-x", exclude]
+    command = [
+        sys.executable, "-I", "-m", "bandit", "-r", ".", "-f", "json", "-q", "-x", exclude,
+        "--ini", str(CONFIG_FILE), "--ignore-nosec",
+    ]
     try:
         process = subprocess.run(
             command,

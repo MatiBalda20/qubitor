@@ -13,6 +13,28 @@ export interface PushToScan {
 
 export type PushDecision = { scan: PushToScan } | { ignore: string }
 
+/**
+ * Repos autorizados a disparar escaneos, de `ALLOWED_REPOSITORIES` ("owner/repo"
+ * separados por comas, sin distinguir mayúsculas como GitHub).
+ *
+ * El secreto de GitHub es uno solo para todos los webhooks (QUB-07): quien lo
+ * conozca puede firmar un push de cualquier repo. Esta lista limita el daño a
+ * los repos autorizados. Vacía, no se acepta ninguno (falla cerrada).
+ */
+export function parseAllowedRepositories(raw: string | undefined): Set<string> {
+  return new Set(
+    (raw ?? '')
+      .split(',')
+      .map((name) => name.trim().toLowerCase())
+      .filter((name) => /^(?!\.)[\w.-]{1,100}\/(?!\.)[\w.-]{1,100}$/.test(name)),
+  )
+}
+
+export function isAllowedRepository(repositoryUrl: string, allowed: Set<string>): boolean {
+  const fullName = repositoryUrl.replace(/^https:\/\/github\.com\//, '').toLowerCase()
+  return allowed.has(fullName)
+}
+
 export function isValidDeliveryId(id: string | null): id is string {
   return id !== null && DELIVERY_ID.test(id)
 }

@@ -6,7 +6,7 @@
   "description": "Cloudflare Worker que recibe los webhooks de push de GitHub y pide un escaneo a la API de Qubitor (Módulo E).",
   "scripts": {
     "dev": "wrangler dev",
-    "types": "wrangler types --include-runtime=false",
+    "types": "wrangler types --include-runtime=false --strict-vars=false",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

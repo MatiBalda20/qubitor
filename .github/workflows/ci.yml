@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   frontend:
-    name: Frontend (lint + build)
+    name: Frontend (lint + tests + build)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -34,6 +34,7 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
+      - run: npm test
       - run: npm run build
 
   backend:
@@ -43,6 +44,24 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # Sin Postgres se salteaban ~110 tests: autorización, aislamiento entre
+    # organizaciones, webhooks y guardado de resultados.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qubitor_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      QUBITOR_TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/qubitor_test
     steps:
       - uses: actions/checkout@v4
 
@@ -56,4 +75,76 @@ jobs:
 
       - run: pip install -r requirements-dev.txt
       # `python -m` agrega backend/ al sys.path para que los tests importen `app`.
-      - run: python -m pytest -q
+      - run: python -m pytest -q -rs
+      # Las migraciones suben, bajan y vuelven a subir, y coinciden con los modelos.
+      - name: Migraciones (alembic)
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/qubitor_migraciones
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE qubitor_migraciones"
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+          alembic check
+
+  webhook-worker:
+    name: Webhook Worker (tests + tipos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra/webhook-worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: infra/webhook-worker/package-lock.json
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      # Empaqueta el Worker como lo haría `wrangler deploy`, sin publicarlo ni usar credenciales.
+      - run: npx wrangler deploy --dry-run --outdir dist
+
+  scan-worker-image:
+    name: Scan-worker (imagen Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: docker build -f backend/worker/Dockerfile -t qubitor-scan-worker:ci backend
+      # Los motores con Semgrep real solo se pueden probar dentro de la imagen.
+      - name: Tests de los motores dentro de la imagen
+        run: |
+          docker run --rm --memory=512m --memory-swap=512m \
+            -e HOME=/tmp -v "$PWD/backend/tests:/app/tests:ro" \
+            --entrypoint sh qubitor-scan-worker:ci -c \
+            "pip install -q --user pytest fakeredis httpx jsonschema pypdf && cd /app && python -m pytest -q -p no:cacheprovider tests/engines"
+
+  dependencias:
+    name: Auditoría de dependencias
+    # Solo en PRs: un aviso nuevo publicado no tiene que frenar el deploy de main/develop.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: pip install pip-audit
+      - run: pip-audit -r backend/requirements.txt
+      - run: npm audit --omit=dev
+        working-directory: frontend
+      - run: npm audit --omit=dev
+        working-directory: infra/webhook-worker

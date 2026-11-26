@@ -114,7 +114,7 @@ def start_scan(
     # Cada escaneo ocupa el worker hasta 5 minutos: una organización no puede
     # acaparar la cola y dejar esperando a las demás.
     limit = max_active_scans_per_org()
-    if _active_scans_of(db, user) >= limit:
+    if _active_scans_of(db, user.organization_id) >= limit:
         db.commit()  # guarda el escaneo trabado que se marcó como fallido
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
@@ -176,7 +176,9 @@ def get_scan_report(scan_id: uuid.UUID, user: CurrentUser = Depends(get_current_
     except Exception as error:
         logger.exception("No se pudieron firmar las URLs del reporte del escaneo %s", scan.id)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No se pudo consultar el almacenamiento de reportes") from error
-    return ScanReportOut(report_url=urls["report"], cbom_url=urls["cbom"], expires_in=SIGNED_URL_SECONDS)
+    return ScanReportOut(
+        report_url=urls["report"], cbom_url=urls["cbom"], pdf_url=urls["pdf"], expires_in=SIGNED_URL_SECONDS
+    )
 
 
 @router.get("/scans/{scan_id}/findings", response_model=list[FindingOut])
@@ -236,14 +238,17 @@ def _get_scan(db: Session, scan_id: uuid.UUID, user: CurrentUser) -> Scan:
     return scan
 
 
-def _active_scans_of(db: Session, user: CurrentUser) -> int:
-    """Escaneos en cola o en curso de la organización, sin contar los trabados."""
+def _active_scans_of(db: Session, organization_id: uuid.UUID) -> int:
+    """Escaneos en cola o en curso de la organización, sin contar los trabados.
+
+    Lo usan el escaneo manual y el webhook de push (integrations/github/webhooks.py).
+    """
     cutoff = datetime.now(timezone.utc) - STALE_AFTER
     return db.scalar(
         select(func.count(Scan.id))
         .join(Repository)
         .where(
-            Repository.organization_id == user.organization_id,
+            Repository.organization_id == organization_id,
             Scan.status.in_(_ACTIVE),
             func.coalesce(Scan.started_at, Scan.created_at) > cutoff,
         )
@@ -291,5 +296,6 @@ def _effective_severity(finding: Finding) -> Severity:
 
 
 def _counts_toward_score(finding: Finding) -> bool:
-    """Solo cuentan los abiertos que la IA no marcó como falso positivo."""
-    return finding.status == FindingStatus.OPEN and not finding.ai_is_false_positive
+    """Solo cuentan los abiertos. La sugerencia de falso positivo de la IA no alcanza:
+    lo tiene que confirmar una persona marcando el hallazgo."""
+    return finding.status == FindingStatus.OPEN

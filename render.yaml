@@ -1,0 +1,222 @@
+# Infraestructura de Qubitor en Render (Módulo B), como código.
+# Spec: https://render.com/docs/blueprint-spec
+#
+# Un proyecto con dos entornos separados:
+#   - staging:    despliega desde la rama `develop`.
+#   - production: despliega desde la rama `main`.
+#
+# Render está conectado directo a este repo (app de Render en GitHub). Cada servicio
+# despliega solo cuando la CI de GitHub Actions pasó en verde para el commit
+# (`autoDeployTrigger: checksPass`): un merge con la CI en rojo no llega a Render.
+# Ver docs/deploy.md.
+#
+# Cada entorno tiene su API, su scan-worker y su grupo de variables. La base (Supabase),
+# la cola (Upstash Redis) y el bucket de reportes son externos y van por entorno:
+# staging NUNCA apunta a los de producción.
+#
+# Los secretos van con `sync: false`: Render los pide en el panel al crear el Blueprint
+# y nunca se escriben acá. Ojo: solo los pide en la creación inicial; una variable
+# `sync: false` que se agregue después hay que cargarla a mano en el servicio.
+#
+# El frontend, el webhook-worker y el keep-alive viven en Cloudflare (ver infra/), no acá.
+#
+# REVISAR antes de sincronizar:
+#   - Todos los servicios usan plan free: 4 web services comparten las 750 h/mes del
+#     workspace. Staging no tiene keep-alive y se duerme tras 15 min sin tráfico.
+#   - Los nombres de producción tienen que coincidir con los servicios que ya existen
+#     en Render, o se crean servicios nuevos con otra URL (y hay que actualizar
+#     VITE_API_URL del frontend, TARGETS del keep-alive y QUBITOR_API_URL del webhook).
+#   - La región no se puede cambiar después de crear un servicio.
+
+projects:
+  - name: qubitor
+    environments:
+      # ------------------------------------------------------------------ staging
+      - name: staging
+        envVarGroups:
+          # Configuración no secreta de staging. Los grupos no admiten `sync: false`,
+          # así que los secretos van en cada servicio.
+          - name: qubitor-staging-config
+            envVars:
+              - key: PYTHON_VERSION
+                value: "3.11.11"
+              # Staging no tiene frontend propio: se prueba con el frontend local
+              # apuntando a la API de staging. Sumar la URL si se publica uno.
+              - key: CORS_ORIGINS
+                value: http://localhost:5173
+              - key: AUTH_DISABLED
+                value: "false"
+              - key: GITHUB_PRIVATE_REPOS
+                value: "false"
+              - key: SEMGREP_ENABLED
+                value: "true"
+
+        services:
+          - type: web
+            name: qubitor-api-staging
+            runtime: python
+            plan: free # REVISAR: free se duerme tras 15 min sin tráfico.
+            region: oregon
+            branch: develop
+            rootDir: backend
+            buildCommand: pip install -r requirements.txt
+            startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+            healthCheckPath: /health
+            autoDeployTrigger: checksPass
+            envVars:
+              - fromGroup: qubitor-staging-config
+              # Supabase de staging (session pooler, postgresql+psycopg://...?sslmode=require).
+              - key: DATABASE_URL
+                sync: false
+              # Upstash de staging (rediss://...). La misma que el scan-worker de staging.
+              - key: REDIS_URL
+                sync: false
+              - key: CLERK_ISSUER
+                sync: false
+              - key: CLERK_SECRET_KEY
+                sync: false
+              # Staging no recibe webhooks de GitHub: alcanza con un valor aleatorio.
+              - key: INTERNAL_WEBHOOK_SECRET
+                generateValue: true
+              # Bucket de reportes de staging (S3-compatible; URLs firmadas).
+              - key: R2_ENDPOINT
+                sync: false
+              - key: R2_REGION
+                sync: false
+              - key: R2_BUCKET
+                sync: false
+              - key: R2_ACCESS_KEY_ID
+                sync: false
+              - key: R2_SECRET_ACCESS_KEY
+                sync: false
+
+          # Web Service y no Background Worker: los workers de Render no tienen plan
+          # free. El scan-worker abre /health en $PORT (app/worker/run.py).
+          - type: web
+            name: qubitor-scan-worker-staging
+            runtime: docker
+            plan: free # REVISAR: 512 MB; repos grandes de JS pueden quedar al límite.
+            region: oregon
+            branch: develop
+            rootDir: backend
+            dockerfilePath: ./worker/Dockerfile
+            dockerContext: .
+            healthCheckPath: /health
+            autoDeployTrigger: checksPass
+            envVars:
+              - fromGroup: qubitor-staging-config
+              - key: DATABASE_URL
+                sync: false
+              - key: REDIS_URL
+                sync: false
+              - key: R2_ENDPOINT
+                sync: false
+              - key: R2_REGION
+                sync: false
+              - key: R2_BUCKET
+                sync: false
+              - key: R2_ACCESS_KEY_ID
+                sync: false
+              - key: R2_SECRET_ACCESS_KEY
+                sync: false
+              # Caché de OSV en Cloudflare KV. Guarda datos públicos de OSV, así que
+              # puede ser el mismo namespace que producción.
+              - key: CF_ACCOUNT_ID
+                sync: false
+              - key: CF_KV_NAMESPACE_ID
+                sync: false
+              - key: CF_API_TOKEN
+                sync: false
+              - key: GEMINI_API_KEY
+                sync: false
+
+      # --------------------------------------------------------------- production
+      - name: production
+        envVarGroups:
+          - name: qubitor-production-config
+            envVars:
+              - key: PYTHON_VERSION
+                value: "3.11.11"
+              - key: CORS_ORIGINS
+                value: https://qubitor.scanner-app.workers.dev
+              - key: AUTH_DISABLED
+                value: "false"
+              - key: GITHUB_PRIVATE_REPOS
+                value: "false"
+              - key: SEMGREP_ENABLED
+                value: "true"
+
+        services:
+          # Mantiene el nombre actual para conservar https://qubitor-api.onrender.com.
+          - type: web
+            name: qubitor-api
+            runtime: python
+            plan: free # REVISAR: con usuarios reales conviene 0.5c-512mb (sin cold start).
+            region: oregon
+            branch: main
+            rootDir: backend
+            buildCommand: pip install -r requirements.txt
+            startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+            healthCheckPath: /health
+            autoDeployTrigger: checksPass
+            envVars:
+              - fromGroup: qubitor-production-config
+              - key: DATABASE_URL
+                sync: false
+              - key: REDIS_URL
+                sync: false
+              - key: CLERK_ISSUER
+                sync: false
+              - key: CLERK_SECRET_KEY
+                sync: false
+              # Compartido con el Cloudflare Worker de infra/webhook-worker: tiene que
+              # ser el mismo valor en los dos lados, por eso no se genera acá.
+              - key: INTERNAL_WEBHOOK_SECRET
+                sync: false
+              - key: R2_ENDPOINT
+                sync: false
+              - key: R2_REGION
+                sync: false
+              - key: R2_BUCKET
+                sync: false
+              - key: R2_ACCESS_KEY_ID
+                sync: false
+              - key: R2_SECRET_ACCESS_KEY
+                sync: false
+
+          # REVISAR: poner el nombre exacto del scan-worker que ya existe en Render.
+          - type: web
+            name: qubitor-scan-worker
+            runtime: docker
+            plan: free # REVISAR: con usuarios reales, Background Worker 0.5c-512mb.
+            region: oregon
+            branch: main
+            rootDir: backend
+            dockerfilePath: ./worker/Dockerfile
+            dockerContext: .
+            healthCheckPath: /health
+            autoDeployTrigger: checksPass
+            envVars:
+              - fromGroup: qubitor-production-config
+              - key: DATABASE_URL
+                sync: false
+              - key: REDIS_URL
+                sync: false
+              - key: R2_ENDPOINT
+                sync: false
+              - key: R2_REGION
+                sync: false
+              - key: R2_BUCKET
+                sync: false
+              - key: R2_ACCESS_KEY_ID
+                sync: false
+              - key: R2_SECRET_ACCESS_KEY
+                sync: false
+              - key: CF_ACCOUNT_ID
+                sync: false
+              - key: CF_KV_NAMESPACE_ID
+                sync: false
+              - key: CF_API_TOKEN
+                sync: false
+              - key: GEMINI_API_KEY
+                sync: false
