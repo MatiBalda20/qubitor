@@ -86,7 +86,7 @@ const THREAT_ORDER: Record<Threat, number> = { broken: 0, shor: 1, grover: 2, no
 /** Cada hallazgo del motor de criptografía, clasificado. Los falsos positivos quedan afuera. */
 export function cryptoUsages(findings: readonly FindingRecord[]): CryptoUsage[] {
   return findings
-    .filter((f) => f.engine === 'crypto' && !f.triage?.is_false_positive)
+    .filter((f) => f.engine === 'crypto')
     .map(toUsage)
     .sort(
       (a, b) =>

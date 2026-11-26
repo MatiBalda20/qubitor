@@ -31,10 +31,8 @@ export function computeStats(findings: readonly FindingRecord[]): DashboardStats
     // Los info se muestran como inventario (peso 0) pero no cuentan como
     // abiertos ni penalizan. Su estado no aplica, así que no se mira.
     if (isInformational(finding)) {
-      if (!finding.triage?.is_false_positive) {
-        bySeverity.info += 1
-        byEngine[finding.engine].info += 1
-      }
+      bySeverity.info += 1
+      byEngine[finding.engine].info += 1
       continue
     }
     if (!countsTowardScore(finding)) continue

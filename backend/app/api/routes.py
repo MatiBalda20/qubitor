@@ -293,5 +293,6 @@ def _effective_severity(finding: Finding) -> Severity:
 
 
 def _counts_toward_score(finding: Finding) -> bool:
-    """Solo cuentan los abiertos que la IA no marcó como falso positivo."""
-    return finding.status == FindingStatus.OPEN and not finding.ai_is_false_positive
+    """Solo cuentan los abiertos. La sugerencia de falso positivo de la IA no alcanza:
+    lo tiene que confirmar una persona marcando el hallazgo."""
+    return finding.status == FindingStatus.OPEN

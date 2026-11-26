@@ -86,7 +86,7 @@ function toVulnerability(finding: FindingRecord): Vulnerability {
     severity: effectiveSeverity(finding),
     cvss: number(finding.metadata, 'cvss'),
     fixedVersion: text(finding.metadata, 'fixed_version') || null,
-    pending: finding.status === 'open' && !finding.triage?.is_false_positive,
+    pending: finding.status === 'open',
   }
 }
 

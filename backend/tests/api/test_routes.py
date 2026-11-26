@@ -329,6 +329,28 @@ def test_marcar_resuelto_recalcula_el_score(client, db):
     assert (scan["risk_score"], scan["grade"]) == (95.0, "A")  # solo cuenta el high
 
 
+def test_un_falso_positivo_sugerido_por_la_ia_sigue_contando_hasta_que_lo_confirme_una_persona(client, db):
+    repo = _conectar(client).json()
+    scan_id = _escanear(client, repo["id"]).json()["id"]
+    _terminar(
+        db, scan_id,
+        (Severity.HIGH, {"ai_is_false_positive": True, "ai_adjusted_severity": Severity.HIGH,
+                         "ai_explanation": "e", "ai_remediation": "r"}),
+        (Severity.MEDIUM, {}),
+    )
+    hallazgos = client.get(f"/scans/{scan_id}/findings", headers=headers()).json()
+    medio = next(h for h in hallazgos if h["severity"] == "medium")
+    sugerido = next(h for h in hallazgos if h["severity"] == "high")
+
+    client.patch(f"/findings/{medio['id']}", json={"status": "resolved"}, headers=headers())
+    scan = client.get(f"/scans/{scan_id}", headers=headers()).json()
+    assert scan["risk_score"] == 95.0  # el high sugerido como FP por la IA sigue penalizando
+
+    client.patch(f"/findings/{sugerido['id']}", json={"status": "false_positive"}, headers=headers())
+    scan = client.get(f"/scans/{scan_id}", headers=headers()).json()
+    assert scan["risk_score"] == 100.0
+
+
 def test_estado_invalido_responde_422(client, db):
     repo = _conectar(client).json()
     scan_id = _escanear(client, repo["id"]).json()["id"]

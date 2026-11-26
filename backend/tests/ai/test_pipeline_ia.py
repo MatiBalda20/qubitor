@@ -62,8 +62,9 @@ def test_recalcula_el_score_con_el_triage():
 
     resultado = apply_ai("scan-1", _resultado(hallazgos), model=gemini)
 
-    # a es falso positivo (no cuenta), b pasa a critical (10) y c sigue high (5).
-    assert resultado.risk_score == 85.0
+    # a es un falso positivo sugerido por la IA: sigue contando (5) hasta que lo
+    # confirme una persona; b pasa a critical (10) y c sigue high (5).
+    assert resultado.risk_score == 80.0
     assert resultado.grade == "B"
     assert set(resultado.triage) == {"a", "b", "c"}
     assert resultado.summary["generated_by"] == "gemini"
@@ -104,14 +105,30 @@ def test_un_error_inesperado_no_rompe_el_escaneo(monkeypatch):
     assert apply_ai("scan-1", original, model=_Gemini()) is original
 
 
-def test_score_ajustado_ignora_falsos_positivos_y_usa_la_severidad_de_la_ia():
+def test_score_ajustado_usa_la_severidad_de_la_ia_y_no_descarta_falsos_positivos_sugeridos():
     resultado = _resultado({"a": _finding(1, severity=Severity.LOW), "b": _finding(2)})
     outcome = TriageOutcome(results={
         "a": TriageResult(False, Severity.CRITICAL, "e", "r"),
         "b": TriageResult(True, Severity.HIGH, "e", "r"),
     })
 
-    assert adjusted_risk_score(resultado, outcome) == 90.0
+    assert adjusted_risk_score(resultado, outcome) == 85.0
+
+
+def test_una_ia_obediente_a_una_inyeccion_no_mejora_la_nota():
+    """Reproduce T18 de la auditoría: un modelo que marca todo como falso positivo e info."""
+    hallazgos = {
+        "cve": _finding(1, engine="sca", severity=Severity.CRITICAL),
+        "eval": _finding(2, engine="sast", severity=Severity.HIGH),
+        "md5": _finding(3, engine="crypto", severity=Severity.MEDIUM),
+    }
+    original = _resultado(hallazgos)
+    gemini = _Gemini({fp: {"is_false_positive": True, "adjusted_severity": "info"} for fp in hallazgos})
+
+    resultado = apply_ai("scan-1", original, model=gemini)
+
+    # cve sigue critical (10), eval baja un nivel a medium (2), md5 a low (0,5).
+    assert resultado.risk_score == 87.5
 
 
 # El job del worker con la etapa de IA
@@ -211,7 +228,8 @@ def test_sql_store_guarda_el_triage_y_el_resumen():
             assert filas["a"].ai_adjusted_severity == Severity.MEDIUM
             assert filas["b"].ai_explanation == "e" and filas["b"].ai_remediation == "r"
             assert guardado.ai_summary["headline"] == "Titular"
-            assert guardado.risk_score == 95.0
+            # a: falso positivo sugerido, sigue contando como medium (2); b: high (5).
+            assert guardado.risk_score == 93.0
     finally:
         Base.metadata.drop_all(engine)
         engine.dispose()

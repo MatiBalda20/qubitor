@@ -45,15 +45,14 @@ def apply_ai(
 
 
 def adjusted_risk_score(result: ScanResult, outcome: TriageOutcome) -> float:
-    """Risk Score con la severidad ajustada por la IA y sin los falsos positivos.
+    """Risk Score con la severidad ajustada por la IA (acotada por `triage._guard`).
 
-    Mismo criterio que la API al marcar un hallazgo (routes.py) y que lib/risk.ts.
+    Los falsos positivos que sugiere la IA siguen contando: solo los saca del
+    score una persona al marcarlos. Mismo criterio que routes.py y lib/risk.ts.
     """
     severities = []
     for fp, finding in result.findings.items():
         evaluation = outcome.results.get(fp)
-        if evaluation is not None and evaluation.is_false_positive:
-            continue
         severities.append(evaluation.adjusted_severity if evaluation is not None else Severity(finding.severity))
     return risk_score(severities)
 
