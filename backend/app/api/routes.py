@@ -176,7 +176,9 @@ def get_scan_report(scan_id: uuid.UUID, user: CurrentUser = Depends(get_current_
     except Exception as error:
         logger.exception("No se pudieron firmar las URLs del reporte del escaneo %s", scan.id)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No se pudo consultar el almacenamiento de reportes") from error
-    return ScanReportOut(report_url=urls["report"], cbom_url=urls["cbom"], expires_in=SIGNED_URL_SECONDS)
+    return ScanReportOut(
+        report_url=urls["report"], cbom_url=urls["cbom"], pdf_url=urls["pdf"], expires_in=SIGNED_URL_SECONDS
+    )
 
 
 @router.get("/scans/{scan_id}/findings", response_model=list[FindingOut])

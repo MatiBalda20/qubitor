@@ -86,6 +86,7 @@ class ScanReportOut(BaseModel):
 
     report_url: str | None
     cbom_url: str | None
+    pdf_url: str | None
     expires_in: int
 
 

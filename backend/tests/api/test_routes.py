@@ -516,7 +516,7 @@ def _escaneo_terminado(client, db):
 
 def test_reporte_devuelve_las_urls_firmadas(client, db, bucket):
     scan_id = _escaneo_terminado(client, db)
-    bucket(f"reports/{scan_id}/report.json", f"reports/{scan_id}/cbom.json")
+    bucket(f"reports/{scan_id}/report.json", f"reports/{scan_id}/cbom.json", f"reports/{scan_id}/report.pdf")
 
     respuesta = client.get(f"/scans/{scan_id}/report", headers=headers())
 
@@ -524,6 +524,7 @@ def test_reporte_devuelve_las_urls_firmadas(client, db, bucket):
     assert respuesta.json() == {
         "report_url": f"https://r2.example/reports/{scan_id}/report.json?expira=600",
         "cbom_url": f"https://r2.example/reports/{scan_id}/cbom.json?expira=600",
+        "pdf_url": f"https://r2.example/reports/{scan_id}/report.pdf?expira=600",
         "expires_in": 600,
     }
 
@@ -534,7 +535,24 @@ def test_reporte_sin_archivos_en_el_bucket_devuelve_null(client, db, bucket):
 
     reporte = client.get(f"/scans/{scan_id}/report", headers=headers()).json()
 
-    assert reporte["report_url"] and reporte["cbom_url"] is None
+    assert reporte["report_url"] and reporte["cbom_url"] is None and reporte["pdf_url"] is None
+
+
+def test_reporte_coincide_con_el_tipo_del_frontend(client, db, bucket):
+    """El contrato de /report tiene que tener los mismos campos que ScanReport en frontend/src/types/Scan.ts."""
+    import re
+    from pathlib import Path
+
+    tipos = (Path(__file__).resolve().parents[3] / "frontend" / "src" / "types" / "Scan.ts").read_text(encoding="utf-8")
+    bloque = re.search(r"interface ScanReport\s*\{(.*?)\}", tipos, re.S)
+    assert bloque, "No se encontró la interfaz ScanReport en frontend/src/types/Scan.ts"
+    campos_frontend = set(re.findall(r"^\s*(\w+)\??:", bloque.group(1), re.M))
+
+    scan_id = _escaneo_terminado(client, db)
+    bucket(f"reports/{scan_id}/report.json")
+    reporte = client.get(f"/scans/{scan_id}/report", headers=headers()).json()
+
+    assert set(reporte) == campos_frontend
 
 
 def test_reporte_de_otra_organizacion_no_toca_el_bucket(client, db, bucket):
