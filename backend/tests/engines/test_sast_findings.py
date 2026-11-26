@@ -112,6 +112,36 @@ def test_snippet_maximo_cinco_lineas(repo):
     assert len(hallazgo.snippet.splitlines()) == 5
 
 
+def _assert(filename):
+    return _resultado(
+        test_id="B101", test_name="assert_used", issue_severity="LOW",
+        issue_cwe={"id": 703}, code="3 assert usuario.es_admin\n", filename=filename,
+    )
+
+
+@pytest.mark.parametrize("filename", [
+    "./tests/test_api.py",
+    "./backend/tests/engines/test_motor.py",
+    "./test/helpers.py",
+    "./app/test_utils.py",
+    "./app/utils_test.py",
+    "./conftest.py",
+])
+def test_descarta_assert_en_archivos_de_tests(repo, filename):
+    assert _convertir(repo, _assert(filename)) == []
+
+
+@pytest.mark.parametrize("filename", ["./app/utils.py", "./app/testing.py", "./app/contest.py"])
+def test_reporta_assert_en_el_codigo_de_la_aplicacion(repo, filename):
+    [hallazgo] = _convertir(repo, _assert(filename))
+    assert hallazgo.rule_id == "sast.bandit.B101"
+
+
+def test_en_los_tests_se_siguen_reportando_las_demas_reglas(repo):
+    [hallazgo] = _convertir(repo, _resultado(filename="./tests/test_api.py"))
+    assert hallazgo.rule_id == "sast.bandit.B307"
+
+
 def test_descarta_archivos_fuera_del_repo(repo):
     assert _convertir(repo, _resultado(filename="../afuera.py")) == []
 
