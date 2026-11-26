@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from app.engines.base import Engine, Finding, Severity
+from app.engines.crypto.files import read_text
 
 IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build"}
 MAX_FILE_BYTES = 1_000_000
@@ -64,8 +65,10 @@ class ConfigEngine(Engine):
             try:
                 if path.stat().st_size > MAX_FILE_BYTES:
                     continue
-                content = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            except OSError:
+                continue
+            content = read_text(path)
+            if content is None:
                 continue
 
             rel_posix = rel.as_posix()

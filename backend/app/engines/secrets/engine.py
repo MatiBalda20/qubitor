@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from app.engines.base import Engine, Finding, Severity
+from app.engines.crypto.files import read_text
 from app.worker.clone import MAX_REPO_BYTES, _size_of, git_env
 
 # Límites del análisis del historial de Git: el repo es ajeno y puede estar
@@ -55,9 +56,8 @@ class SecretsEngine(Engine):
         for file_path in repo.rglob("*"):
             if self._should_ignore(file_path, repo):
                 continue
-            try:
-                content = file_path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            content = read_text(file_path)
+            if content is None:
                 continue
             relative_path = file_path.relative_to(repo).as_posix()
             findings.extend(self._scan_content(content, relative_path))

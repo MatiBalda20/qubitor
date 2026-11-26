@@ -25,12 +25,30 @@ def iter_repo_files(repo: Path, match: Callable[[Path], bool]) -> Iterator[Path]
         yield path
 
 
+# Los primeros bytes que se miran para decidir si un archivo es binario (mismo criterio que git).
+_BINARY_SNIFF_BYTES = 8000
+
+
 def read_text(path: Path) -> str | None:
-    """El contenido del archivo, o None si no se puede leer.
+    """El contenido del archivo como texto, o None si no se puede leer o es binario.
 
     El contrato pide no lanzar excepciones por archivos ilegibles: se saltean.
+    Un archivo que no es UTF-8 válido (por ejemplo, código heredado en latin-1)
+    no se descarta: se decodifica como latin-1, que acepta cualquier byte y
+    conserva el ASCII, así los patrones siguen funcionando (QUB-01/F-06).
     """
     try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+        data = path.read_bytes()
+    except OSError:
         return None
+    return decode_source(data)
+
+
+def decode_source(data: bytes) -> str | None:
+    """Texto de un archivo fuente: UTF-8, o latin-1 si no es UTF-8. None si es binario."""
+    if b"\0" in data[:_BINARY_SNIFF_BYTES]:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("latin-1")
