@@ -148,6 +148,8 @@ def test_severidad_y_estado_se_guardan_por_valor(db, scan_id):
 def test_guardar_dos_veces_no_duplica_hallazgos(db, scan_id):
     from app.worker.sql_store import SqlScanStore
 
+    from app.worker.sql_store import SqlScanStore
+
     store = SqlScanStore(db)
     store.save_result(scan_id, "a" * 40, _resultado(_finding(2), _finding(3)))
     store.save_result(scan_id, "b" * 40, _resultado(_finding(2)))
@@ -217,6 +219,8 @@ def test_marca_el_escaneo_fallido(db, scan_id):
 def test_escaneo_inexistente_no_rompe(db, scan_id_raro):
     from app.worker.sql_store import SqlScanStore
 
+    from app.worker.sql_store import SqlScanStore
+
     store = SqlScanStore(db)
     store.mark_running(scan_id_raro)
     store.save_result(scan_id_raro, "a" * 40, _resultado(_finding(2)))
@@ -254,3 +258,53 @@ def test_el_job_guarda_el_escaneo_completo_en_la_base(db, scan_id, monkeypatch, 
     assert scan.status is ScanStatus.COMPLETED
     assert (scan.risk_score, scan.grade, scan.commit_sha) == (95.0, "A", "c" * 40)
     assert len(hallazgos) == 1
+
+
+def _otro_escaneo(db, scan_id):
+    from app.models.models import Scan
+
+    with db() as session, session.begin():
+        anterior = session.get(Scan, uuid.UUID(scan_id))
+        nuevo = Scan(repository_id=anterior.repository_id)
+        session.add(nuevo)
+        session.flush()
+        return str(nuevo.id)
+
+
+@necesita_postgres
+def test_un_falso_positivo_confirmado_se_conserva_en_el_siguiente_escaneo(db, scan_id):
+    """F-03: la marca de una persona no se pierde al reescanear."""
+    from app.models.models import Finding as Fila
+    from app.models.models import FindingStatus
+
+    from app.worker.sql_store import SqlScanStore
+
+    store = SqlScanStore(db)
+    resultado = _resultado(_finding(1), _finding(2, severity=Severity.MEDIUM, rule_id="sast.bandit.B105"))
+    store.save_result(scan_id, "a" * 40, resultado)
+    with db() as session, session.begin():
+        for fila in session.query(Fila).filter(Fila.scan_id == uuid.UUID(scan_id)):
+            fila.status = FindingStatus.FALSE_POSITIVE if fila.line == 1 else FindingStatus.RESOLVED
+
+    siguiente = _otro_escaneo(db, scan_id)
+    store.save_result(siguiente, "b" * 40, resultado)
+
+    scan, hallazgos = _leer(db, siguiente)
+    estados = {h.line: h.status for h in hallazgos}
+    assert estados == {1: FindingStatus.FALSE_POSITIVE, 2: FindingStatus.OPEN}  # el resuelto que vuelve se reabre
+    assert scan.risk_score == 98.0  # solo cuenta el medium (2)
+    assert scan.grade == "A"
+
+
+@necesita_postgres
+def test_sin_marcas_previas_se_guarda_el_score_del_pipeline(db, scan_id):
+    from app.worker.sql_store import SqlScanStore
+
+    store = SqlScanStore(db)
+    store.save_result(scan_id, "a" * 40, _resultado(_finding(1)))
+    siguiente = _otro_escaneo(db, scan_id)
+
+    store.save_result(siguiente, "b" * 40, _resultado(_finding(1)))
+
+    scan, _ = _leer(db, siguiente)
+    assert (scan.risk_score, scan.grade) == (90.0, "A")
