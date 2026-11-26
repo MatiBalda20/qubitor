@@ -79,3 +79,39 @@ def test_bandit_no_recibe_credenciales_y_corre_aislado(tmp_path, monkeypatch):
     assert "-I" in command
     assert "DATABASE_URL" not in kwargs["env"]
     assert "CLERK_SECRET_KEY" not in kwargs["env"]
+
+
+
+# El repo analizado no puede silenciar hallazgos (QUB-01).
+
+def test_un_bandit_del_repo_no_desactiva_reglas(tmp_path):
+    (tmp_path / "app.py").write_text("x = input()\neval(x)\n", encoding="utf-8")
+    (tmp_path / ".bandit").write_text("[bandit]\nskips: B307\n", encoding="utf-8")
+
+    salida = run_bandit(str(tmp_path))
+
+    assert "B307" in {r["test_id"] for r in salida["results"]}
+
+
+def test_un_comentario_nosec_no_oculta_el_hallazgo(tmp_path):
+    (tmp_path / "app.py").write_text("x = input()\neval(x)  # nosec\n", encoding="utf-8")
+
+    salida = run_bandit(str(tmp_path))
+
+    assert "B307" in {r["test_id"] for r in salida["results"]}
+
+
+def test_bandit_usa_la_configuracion_de_qubitor(tmp_path, monkeypatch):
+    llamadas = []
+
+    def fake_run(command, **kwargs):
+        llamadas.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout='{"results": []}', stderr="")
+
+    monkeypatch.setattr(bandit.subprocess, "run", fake_run)
+    run_bandit(str(tmp_path))
+
+    command = llamadas[0]
+    assert "--ignore-nosec" in command
+    assert command[command.index("--ini") + 1] == str(bandit.CONFIG_FILE)
+    assert bandit.CONFIG_FILE.is_file()

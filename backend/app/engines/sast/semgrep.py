@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 from app.engines.base import Finding, Severity
-from app.engines.sast.bandit import IGNORED_DIRS
+from app.engines.sast.bandit import IGNORED_DIRS, bandit_env
 from app.engines.sast.findings import MAX_SNIPPET_LINES, _relative_path
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,23 @@ def semgrep_enabled() -> bool:
     return os.getenv("SEMGREP_ENABLED", "true").strip().lower() != "false"
 
 
+def semgrep_env(home: str) -> dict[str, str]:
+    """Entorno mínimo para Semgrep, el mismo criterio que Bandit y git (QUB-05).
+
+    Semgrep analiza código ajeno: no recibe DATABASE_URL, REDIS_URL,
+    GEMINI_API_KEY, las claves del bucket ni ningún otro secreto del worker.
+    """
+    return {
+        **bandit_env(),
+        "HOME": home,
+        "XDG_CONFIG_HOME": home,
+        "XDG_CACHE_HOME": home,
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "SEMGREP_SEND_METRICS": "off",
+    }
+
+
 def run_semgrep(repo_path: str, timeout: int = TIMEOUT_SECONDS) -> dict | None:
     """Salida JSON de Semgrep sobre el repo, o None si no está instalado o está apagado."""
     if not semgrep_enabled():
@@ -59,6 +76,12 @@ def run_semgrep(repo_path: str, timeout: int = TIMEOUT_SECONDS) -> dict | None:
         # sumado a los otros motores, el worker se queda sin memoria.
         "--jobs", "1",
         "--max-target-bytes", str(MAX_TARGET_BYTES),
+        # El repo analizado no puede silenciar hallazgos (QUB-01): se ignoran los
+        # comentarios `nosemgrep` y los archivos `.semgrepignore` del repo. Si una
+        # versión futura quita la opción interna, Semgrep falla y el error queda
+        # visible en engine_errors (no se pierde en silencio).
+        "--disable-nosem",
+        "--x-ignore-semgrepignore-files",
     ]
     for pattern in JS_PATTERNS:
         command += ["--include", pattern]
@@ -68,7 +91,7 @@ def run_semgrep(repo_path: str, timeout: int = TIMEOUT_SECONDS) -> dict | None:
 
     # Semgrep escribe su configuración en HOME: el usuario del worker no tiene uno propio.
     with tempfile.TemporaryDirectory(prefix="semgrep-home-") as home:
-        env = {**os.environ, "HOME": home, "XDG_CONFIG_HOME": home, "SEMGREP_SEND_METRICS": "off"}
+        env = semgrep_env(home)
         try:
             process = subprocess.run(
                 command, cwd=repo_path, env=env, capture_output=True, text=True, timeout=timeout
