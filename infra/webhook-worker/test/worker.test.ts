@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { signSha256, verifySha256Signature } from '../src/crypto'
-import { decidePush } from '../src/github'
-import worker, { MAX_BODY_BYTES } from '../src/index'
+import { decidePush, isAllowedRepository, parseAllowedRepositories } from '../src/github'
+import { MAX_BODY_BYTES } from '../src/handler'
+import * as entrypoint from '../src/index'
+import worker from '../src/index'
 
 const GITHUB_SECRET = 'secreto-de-github'
 const INTERNAL_SECRET = 'secreto-interno-de-prueba-de-32-caracteres'
@@ -28,6 +30,7 @@ function makeEnv(kv = new FakeKV()) {
     QUBITOR_API_URL: 'https://qubitor-api.onrender.com',
     GITHUB_WEBHOOK_SECRET: GITHUB_SECRET,
     INTERNAL_WEBHOOK_SECRET: INTERNAL_SECRET,
+    ALLOWED_REPOSITORIES: 'otra/cosa, Acme/Demo',
   } satisfies Env
   return { env, kv }
 }
@@ -238,5 +241,49 @@ describe('worker', () => {
   it('solo atiende POST en la ruta del webhook', async () => {
     expect((await worker.fetch(new Request('https://w.example/otra', { method: 'POST' }), makeEnv().env)).status).toBe(404)
     expect((await worker.fetch(new Request('https://w.example/github/webhook'), makeEnv().env)).status).toBe(405)
+  })
+})
+
+describe('repos autorizados (QUB-07)', () => {
+  it('compara owner/repo sin distinguir mayúsculas y descarta entradas inválidas', () => {
+    const allowed = parseAllowedRepositories(' Acme/Demo ,, no-es-un-repo, ../x, otra/cosa ')
+
+    expect([...allowed].sort()).toEqual(['acme/demo', 'otra/cosa'])
+    expect(isAllowedRepository('https://github.com/ACME/demo', allowed)).toBe(true)
+    expect(isAllowedRepository('https://github.com/acme/demo-fork', allowed)).toBe(false)
+  })
+
+  it('sin lista no se autoriza ningún repo', () => {
+    expect(isAllowedRepository('https://github.com/acme/demo', parseAllowedRepositories(''))).toBe(false)
+    expect(isAllowedRepository('https://github.com/acme/demo', parseAllowedRepositories(undefined))).toBe(false)
+  })
+
+  it('un push bien firmado de un repo no autorizado no llega a la API ni se marca', async () => {
+    const calls = mockApi()
+    const { env, kv } = makeEnv()
+    const payload = pushPayload({ repository: { html_url: 'https://github.com/victima/privado', default_branch: 'main' } })
+
+    const response = await worker.fetch(await githubRequest(payload), env)
+
+    expect(response.status).toBe(202)
+    expect(await response.json()).toEqual({ ignored: 'repositorio no autorizado' })
+    expect(calls).toHaveLength(0)
+    expect(kv.puts).toHaveLength(0)
+  })
+
+  it('con la lista vacía el Worker no pide ningún escaneo', async () => {
+    const calls = mockApi()
+    const { env } = makeEnv()
+
+    const response = await worker.fetch(await githubRequest(pushPayload()), { ...env, ALLOWED_REPOSITORIES: '' })
+
+    expect(response.status).toBe(202)
+    expect(calls).toHaveLength(0)
+  })
+})
+
+describe('módulo principal', () => {
+  it('solo exporta el handler por defecto (workerd rechaza otros exports que no sean handlers)', () => {
+    expect(Object.keys(entrypoint)).toEqual(['default'])
   })
 })
